@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useAuthStore } from './stores/authStore'
+import { usePlayerStore } from './stores/playerStore'
 import Layout from './components/Layout'
 import Home from './pages/Home'
 import Search from './pages/Search'
@@ -13,10 +14,13 @@ import Setup from './pages/Setup'
 
 function App() {
   const { checkSetupStatus, setupStatus, loading } = useAuthStore()
+  const initMediaSession = usePlayerStore((state) => state.initMediaSession)
 
   useEffect(() => {
     checkSetupStatus()
-  }, [checkSetupStatus])
+    // Initialize Media Session API for Bluetooth/hardware button support
+    initMediaSession()
+  }, [checkSetupStatus, initMediaSession])
 
   if (loading) {
     return (

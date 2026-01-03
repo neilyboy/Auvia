@@ -2,6 +2,54 @@ import { create } from 'zustand'
 import { Howl } from 'howler'
 import api, { API_URL } from '../services/api'
 
+// Helper to get cover art URL
+const getCoverArtUrl = (track) => {
+  if (!track) return null
+  if (track.is_downloaded && track.album_id) {
+    return `${API_URL}/api/music/cover/${track.album_id}`
+  }
+  return track.cover_art_url || null
+}
+
+// Update Media Session metadata and handlers
+const updateMediaSession = (track, isPlaying, actions) => {
+  if (!('mediaSession' in navigator)) return
+  
+  try {
+    // Set metadata
+    if (track) {
+      const artwork = []
+      const coverUrl = getCoverArtUrl(track)
+      if (coverUrl) {
+        artwork.push({ src: coverUrl, sizes: '512x512', type: 'image/jpeg' })
+      }
+      
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.title || 'Unknown Title',
+        artist: track.artist_name || 'Unknown Artist',
+        album: track.album_title || 'Unknown Album',
+        artwork: artwork
+      })
+    }
+    
+    // Set playback state
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused'
+    
+    // Register action handlers
+    if (actions) {
+      navigator.mediaSession.setActionHandler('play', actions.play)
+      navigator.mediaSession.setActionHandler('pause', actions.pause)
+      navigator.mediaSession.setActionHandler('previoustrack', actions.previous)
+      navigator.mediaSession.setActionHandler('nexttrack', actions.next)
+      navigator.mediaSession.setActionHandler('seekto', actions.seekTo)
+      navigator.mediaSession.setActionHandler('seekbackward', actions.seekBackward)
+      navigator.mediaSession.setActionHandler('seekforward', actions.seekForward)
+    }
+  } catch (e) {
+    console.log('Media Session error:', e)
+  }
+}
+
 export const usePlayerStore = create((set, get) => ({
   // Current track
   currentTrack: null,
@@ -84,6 +132,8 @@ export const usePlayerStore = create((set, get) => ({
           duration: newSound.duration(),
           isLoading: false 
         })
+        // Set initial Media Session metadata
+        updateMediaSession(track, false, get().getMediaSessionActions())
         if (autoPlay) {
           newSound.play()
         }
@@ -92,10 +142,14 @@ export const usePlayerStore = create((set, get) => ({
         console.log('Playing:', track.title)
         set({ isPlaying: true })
         get().startProgressTimer()
+        // Update Media Session
+        updateMediaSession(track, true, get().getMediaSessionActions())
       },
       onpause: () => {
         console.log('Paused:', track.title)
         set({ isPlaying: false })
+        // Update Media Session
+        updateMediaSession(track, false, null)
       },
       onstop: () => {
         set({ isPlaying: false, currentTime: 0 })
@@ -158,9 +212,24 @@ export const usePlayerStore = create((set, get) => ({
     if (!sound) return
     
     const update = () => {
-      const { sound, isPlaying } = get()
+      const { sound, isPlaying, duration } = get()
       if (sound && isPlaying) {
-        set({ currentTime: sound.seek() || 0 })
+        const currentTime = sound.seek() || 0
+        set({ currentTime })
+        
+        // Update Media Session position state for lock screen/Bluetooth progress
+        if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+          try {
+            navigator.mediaSession.setPositionState({
+              duration: duration || 0,
+              playbackRate: 1,
+              position: currentTime
+            })
+          } catch (e) {
+            // Ignore position state errors
+          }
+        }
+        
         requestAnimationFrame(update)
       }
     }
@@ -270,5 +339,47 @@ export const usePlayerStore = create((set, get) => ({
     const mins = Math.floor(seconds / 60)
     const secs = Math.floor(seconds % 60)
     return `${mins}:${secs.toString().padStart(2, '0')}`
+  },
+
+  // Media Session actions for hardware buttons (Bluetooth, lock screen, etc.)
+  getMediaSessionActions: () => ({
+    play: () => get().play(),
+    pause: () => get().pause(),
+    previous: () => get().playPrevious(),
+    next: () => get().playNext(),
+    seekTo: (details) => {
+      if (details.seekTime !== undefined) {
+        get().seek(details.seekTime)
+      }
+    },
+    seekBackward: (details) => {
+      const skipTime = details.seekOffset || 10
+      const { currentTime } = get()
+      get().seek(Math.max(0, currentTime - skipTime))
+    },
+    seekForward: (details) => {
+      const skipTime = details.seekOffset || 10
+      const { currentTime, duration } = get()
+      get().seek(Math.min(duration, currentTime + skipTime))
+    }
+  }),
+
+  // Initialize Media Session handlers (call once on app start)
+  initMediaSession: () => {
+    if (!('mediaSession' in navigator)) return
+    
+    const actions = get().getMediaSessionActions()
+    try {
+      navigator.mediaSession.setActionHandler('play', actions.play)
+      navigator.mediaSession.setActionHandler('pause', actions.pause)
+      navigator.mediaSession.setActionHandler('previoustrack', actions.previous)
+      navigator.mediaSession.setActionHandler('nexttrack', actions.next)
+      navigator.mediaSession.setActionHandler('seekto', actions.seekTo)
+      navigator.mediaSession.setActionHandler('seekbackward', actions.seekBackward)
+      navigator.mediaSession.setActionHandler('seekforward', actions.seekForward)
+      console.log('Media Session handlers registered')
+    } catch (e) {
+      console.log('Media Session init error:', e)
+    }
   }
 }))
