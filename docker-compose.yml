@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: auvia-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-auvia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auvia_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-auvia}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - auvia-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-auvia}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: auvia-redis
+    networks:
+      - auvia-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: auvia-backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auvia}:${POSTGRES_PASSWORD:-auvia_secret}@db:5432/${POSTGRES_DB:-auvia}
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      MUSIC_STORAGE_PATH: /music
+    volumes:
+      - ${MUSIC_PATH_1:-./music}:/music
+      - ${MUSIC_PATH_2:-./music2}:/music2
+      - ${MUSIC_PATH_3:-./music3}:/music3
+      - streamrip_config:/root/.config/streamrip
+    ports:
+      - "${BACKEND_PORT:-8001}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - auvia-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ""
+    container_name: auvia-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    networks:
+      - auvia-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  streamrip_config:
+
+networks:
+  auvia-network:
+    driver: bridge
