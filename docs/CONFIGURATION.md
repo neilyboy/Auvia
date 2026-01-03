@@ -280,7 +280,36 @@ http://SERVER_IP:3000
 
 ### Reverse Proxy Setup
 
-#### Nginx
+> **Important**: You must proxy BOTH the frontend (port 3000) AND the backend API (port 8001) 
+> through the same domain for Auvia to work correctly behind a reverse proxy.
+
+#### Nginx Proxy Manager (NPM)
+
+1. Create a new **Proxy Host** for your domain (e.g., `tunes.example.com`)
+2. Set **Forward Hostname/IP** to your server IP and **Port** to `3000`
+3. Enable SSL if desired (Let's Encrypt)
+4. Go to the **Advanced** tab and add this **Custom Nginx Configuration**:
+
+```nginx
+location /api {
+    proxy_pass http://YOUR_SERVER_IP:8001/api;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 86400;
+    proxy_buffering off;
+    client_max_body_size 0;
+}
+```
+
+5. Replace `YOUR_SERVER_IP` with your Auvia server's IP (e.g., `192.168.1.164`)
+6. Save and test
+
+#### Nginx (Manual)
 
 ```nginx
 server {
@@ -301,6 +330,9 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
     }
 }
 ```
