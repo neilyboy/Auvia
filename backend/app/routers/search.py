@@ -12,7 +12,7 @@ from app.services.qobuz import QobuzService
 router = APIRouter(prefix="/search", tags=["Search"])
 
 
-@router.get("/", response_model=SearchResult)
+@router.get("", response_model=SearchResult)
 async def search(
     q: str = Query(..., min_length=1, description="Search query"),
     include_remote: bool = Query(True, description="Include results from Qobuz API"),

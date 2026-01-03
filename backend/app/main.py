@@ -63,7 +63,8 @@ app = FastAPI(
     title=settings.app_name,
     description=f"{settings.app_name} - {settings.app_tagline}. A modern jukebox web application.",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    redirect_slashes=False  # Disable automatic trailing slash redirects
 )
 
 # CORS middleware
