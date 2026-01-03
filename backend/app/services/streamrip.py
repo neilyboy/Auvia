@@ -112,6 +112,12 @@ class StreamripService:
             if qobuz_config.secrets:
                 config["qobuz"]["secrets"] = qobuz_config.secrets
             
+            # Ensure filepaths section has correct folder format (no [container] suffix)
+            if "filepaths" not in config:
+                config["filepaths"] = {}
+            config["filepaths"]["folder_format"] = "{albumartist} - {title} ({year})"
+            config["filepaths"]["track_format"] = "{tracknumber}. {artist} - {title}"
+            
             # Write config
             with open(self.config_path, "w") as f:
                 toml.dump(config, f)
@@ -159,7 +165,7 @@ class StreamripService:
             },
             "filepaths": {
                 "add_singles_to_folder": False,
-                "folder_format": "{albumartist} - {title} ({year}) [{container}]",
+                "folder_format": "{albumartist} - {title} ({year})",
                 "track_format": "{tracknumber}. {artist} - {title}"
             },
             "artwork": {

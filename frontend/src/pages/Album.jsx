@@ -25,8 +25,11 @@ export default function Album() {
     if (downloading && album?.qobuz_id) {
       pollInterval = setInterval(async () => {
         try {
-          // Use the by-qobuz endpoint which triggers a scan and finds by qobuz_id
-          const response = await api.get(`/music/albums/by-qobuz/${album.qobuz_id}`)
+          // Use the by-qobuz endpoint which triggers a scan and finds by qobuz_id or title+artist
+          const params = {}
+          if (album.title) params.title = album.title
+          if (album.artist_name) params.artist = album.artist_name
+          const response = await api.get(`/music/albums/by-qobuz/${album.qobuz_id}`, { params })
           if (response.data?.found && response.data?.album?.is_downloaded && response.data?.album?.tracks?.length > 0) {
             setAlbum(response.data.album)
             setDownloading(false)

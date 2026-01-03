@@ -259,10 +259,13 @@ class MusicService:
                     if not metadata:
                         continue
                     
+                    # Ensure artist name is valid
+                    artist_name = metadata.get("artist")
+                    if not artist_name or artist_name.strip() == "":
+                        artist_name = "Unknown Artist"
+                    
                     # Get or create artist
-                    artist = await self.get_or_create_artist(
-                        metadata.get("artist", "Unknown Artist")
-                    )
+                    artist = await self.get_or_create_artist(artist_name)
                     
                     # Get or create album
                     album = await self.get_or_create_album(
@@ -300,8 +303,17 @@ class MusicService:
                 except Exception as e:
                     print(f"Error processing {file_path}: {e}")
                     stats["errors"] += 1
+                    # Rollback to recover from database errors
+                    try:
+                        await self.db.rollback()
+                    except:
+                        pass
         
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except Exception as e:
+            print(f"Error committing scan results: {e}")
+            await self.db.rollback()
         print(f"Scan complete: {stats}")
         return stats
     
