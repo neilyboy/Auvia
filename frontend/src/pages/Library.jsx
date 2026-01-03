@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Disc3, Music, Users, Filter } from 'lucide-react'
 import AlbumCard from '../components/AlbumCard'
 import TrackItem from '../components/TrackItem'
+import PlayActionModal from '../components/PlayActionModal'
 import api from '../services/api'
 import { usePlayerStore } from '../stores/playerStore'
 import toast from 'react-hot-toast'
@@ -12,7 +13,8 @@ export default function Library() {
   const [tracks, setTracks] = useState([])
   const [artists, setArtists] = useState([])
   const [loading, setLoading] = useState(true)
-  const { setQueue, addToQueue } = usePlayerStore()
+  const { setQueue, addToQueue, addTracksToQueue, addTracksToQueueNext, currentTrack } = usePlayerStore()
+  const [playActionModal, setPlayActionModal] = useState({ open: false, item: null, tracks: null })
 
   useEffect(() => {
     fetchLibrary()
@@ -43,8 +45,13 @@ export default function Library() {
     try {
       const response = await api.get(`/music/albums/${album.id}`)
       if (response.data.tracks?.length > 0) {
-        setQueue(response.data.tracks)
-        toast.success(`Playing ${album.title}`)
+        // If something is playing, show action modal
+        if (currentTrack) {
+          setPlayActionModal({ open: true, item: album, tracks: response.data.tracks })
+        } else {
+          setQueue(response.data.tracks)
+          toast.success(`Playing ${album.title}`)
+        }
       }
     } catch (error) {
       toast.error('Failed to play album')
@@ -151,6 +158,31 @@ export default function Library() {
           />
         )
       ) : null}
+
+      {/* Play Action Modal */}
+      <PlayActionModal
+        isOpen={playActionModal.open}
+        onClose={() => setPlayActionModal({ open: false, item: null, tracks: null })}
+        onPlayNow={() => {
+          if (playActionModal.tracks) {
+            setQueue(playActionModal.tracks)
+            toast.success(`Playing ${playActionModal.item?.title}`)
+          }
+        }}
+        onAddToQueue={() => {
+          if (playActionModal.tracks) {
+            addTracksToQueue(playActionModal.tracks)
+            toast.success(`Added ${playActionModal.item?.title} to queue`)
+          }
+        }}
+        onPlayNext={() => {
+          if (playActionModal.tracks) {
+            addTracksToQueueNext(playActionModal.tracks)
+            toast.success(`${playActionModal.item?.title} will play next`)
+          }
+        }}
+        title="Play Album"
+      />
     </div>
   )
 }

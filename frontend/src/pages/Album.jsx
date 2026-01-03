@@ -151,11 +151,12 @@ export default function Album() {
 
   const handlePlayTrack = (track, index) => {
     if (album?.tracks?.length > 0) {
-      // If something is playing, show action modal
+      // If something is playing, show action modal for just this track
       if (currentTrack) {
-        setPlayActionModal({ open: true, tracks: album.tracks.slice(index) })
+        setPlayActionModal({ open: true, tracks: [track], isSingleTrack: true })
       } else {
-        setQueue(album.tracks, index)
+        // When nothing is playing, play just this track
+        setQueue([track])
       }
     } else {
       // Single track play with download
@@ -327,27 +328,30 @@ export default function Album() {
       {/* Play Action Modal */}
       <PlayActionModal
         isOpen={playActionModal.open}
-        onClose={() => setPlayActionModal({ open: false, tracks: null })}
+        onClose={() => setPlayActionModal({ open: false, tracks: null, isSingleTrack: false })}
         onPlayNow={() => {
           if (playActionModal.tracks) {
             setQueue(playActionModal.tracks)
-            toast.success(`Playing ${album?.title}`)
+            const trackName = playActionModal.isSingleTrack ? playActionModal.tracks[0]?.title : album?.title
+            toast.success(`Playing ${trackName}`)
             navigate('/queue')
           }
         }}
         onAddToQueue={() => {
           if (playActionModal.tracks) {
             addTracksToQueue(playActionModal.tracks)
-            toast.success(`Added to queue`)
+            const trackName = playActionModal.isSingleTrack ? `"${playActionModal.tracks[0]?.title}"` : album?.title
+            toast.success(`Added ${trackName} to queue`)
           }
         }}
         onPlayNext={() => {
           if (playActionModal.tracks) {
             addTracksToQueueNext(playActionModal.tracks)
-            toast.success(`Will play next`)
+            const trackName = playActionModal.isSingleTrack ? `"${playActionModal.tracks[0]?.title}"` : album?.title
+            toast.success(`${trackName} will play next`)
           }
         }}
-        title="Play Album"
+        title={playActionModal.isSingleTrack ? "Play Track" : "Play Album"}
       />
     </div>
   )
