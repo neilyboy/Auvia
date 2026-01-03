@@ -1,14 +1,14 @@
 import axios from 'axios'
 
-// Dynamically determine API URL - allows external access
+// API URL - use same origin (nginx proxies /api to backend)
+// This allows the app to work behind any reverse proxy without configuration
 const getApiUrl = () => {
-  // If explicitly set, use that
+  // If explicitly set via env var, use that (for development or special setups)
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL
   }
-  // Otherwise, use the same host as the frontend but on port 8001
-  const { protocol, hostname } = window.location
-  return `${protocol}//${hostname}:8001`
+  // Use same origin - nginx proxies /api to backend
+  return ''
 }
 
 export const API_URL = getApiUrl()
