@@ -4,6 +4,7 @@ import { Search as SearchIcon, X, Loader2 } from 'lucide-react'
 import { useDebouncedCallback } from 'use-debounce'
 import AlbumCard from '../components/AlbumCard'
 import TrackItem from '../components/TrackItem'
+import PlayActionModal from '../components/PlayActionModal'
 import api from '../services/api'
 import { usePlayerStore } from '../stores/playerStore'
 import toast from 'react-hot-toast'
@@ -14,7 +15,8 @@ export default function Search() {
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
-  const { setQueue, addToQueue } = usePlayerStore()
+  const { setQueue, addToQueue, addTracksToQueue, addToQueueNext, addTracksToQueueNext, currentTrack } = usePlayerStore()
+  const [playActionModal, setPlayActionModal] = useState({ open: false, type: null, item: null, tracks: null })
 
   const debouncedSearch = useDebouncedCallback(async (searchQuery) => {
     if (!searchQuery.trim()) {
@@ -45,8 +47,13 @@ export default function Search() {
       try {
         const response = await api.get(`/music/albums/${album.id}`)
         if (response.data.tracks?.length > 0) {
-          setQueue(response.data.tracks)
-          toast.success(`Playing ${album.title}`)
+          // If something is playing, show action modal
+          if (currentTrack) {
+            setPlayActionModal({ open: true, type: 'album', item: album, tracks: response.data.tracks })
+          } else {
+            setQueue(response.data.tracks)
+            toast.success(`Playing ${album.title}`)
+          }
         }
       } catch (error) {
         toast.error('Failed to play album')
@@ -64,7 +71,12 @@ export default function Search() {
 
   const handlePlayTrack = async (track) => {
     if (track.is_downloaded && track.id) {
-      setQueue([track])
+      // If something is playing, show action modal
+      if (currentTrack) {
+        setPlayActionModal({ open: true, type: 'track', item: track, tracks: [track] })
+      } else {
+        setQueue([track])
+      }
     } else if (track.qobuz_album_url) {
       toast.loading('Downloading...', { id: 'download' })
       try {
@@ -232,6 +244,37 @@ export default function Search() {
           </p>
         </div>
       ) : null}
+
+      {/* Play Action Modal */}
+      <PlayActionModal
+        isOpen={playActionModal.open}
+        onClose={() => setPlayActionModal({ open: false, type: null, item: null, tracks: null })}
+        onPlayNow={() => {
+          if (playActionModal.tracks) {
+            setQueue(playActionModal.tracks)
+            toast.success(playActionModal.type === 'album' 
+              ? `Playing ${playActionModal.item?.title}` 
+              : `Playing ${playActionModal.item?.title}`)
+          }
+        }}
+        onAddToQueue={() => {
+          if (playActionModal.tracks) {
+            addTracksToQueue(playActionModal.tracks)
+            toast.success(playActionModal.type === 'album'
+              ? `Added ${playActionModal.item?.title} to queue`
+              : `Added "${playActionModal.item?.title}" to queue`)
+          }
+        }}
+        onPlayNext={() => {
+          if (playActionModal.tracks) {
+            addTracksToQueueNext(playActionModal.tracks)
+            toast.success(playActionModal.type === 'album'
+              ? `${playActionModal.item?.title} will play next`
+              : `"${playActionModal.item?.title}" will play next`)
+          }
+        }}
+        title={playActionModal.type === 'album' ? 'Play Album' : 'Play Track'}
+      />
     </div>
   )
 }

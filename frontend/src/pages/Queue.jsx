@@ -1,9 +1,81 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Play, Pause, Trash2, GripVertical, ListX } from 'lucide-react'
-import { motion, AnimatePresence, Reorder } from 'framer-motion'
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import { usePlayerStore } from '../stores/playerStore'
 import api, { API_URL } from '../services/api'
 import toast from 'react-hot-toast'
+
+// Drag handle component - only this triggers drag on mobile
+function DragHandle({ dragControls }) {
+  return (
+    <div
+      className="p-2 -m-2 touch-none cursor-grab active:cursor-grabbing"
+      onPointerDown={(e) => {
+        e.preventDefault()
+        dragControls.start(e)
+      }}
+    >
+      <GripVertical size={18} className="text-auvia-muted" />
+    </div>
+  )
+}
+
+// Queue item with proper drag controls
+function QueueItem({ track, index, queueIndex, playTrackFromQueue, removeFromQueue, getCoverUrl }) {
+  const dragControls = useDragControls()
+  
+  return (
+    <Reorder.Item
+      key={track.id || track.qobuz_id || index}
+      value={track}
+      dragListener={false}
+      dragControls={dragControls}
+      className="flex items-center gap-3 p-3 bg-auvia-card/50 rounded-xl"
+    >
+      <DragHandle dragControls={dragControls} />
+      
+      <div className="w-10 h-10 rounded overflow-hidden flex-shrink-0">
+        {getCoverUrl(track) ? (
+          <img 
+            src={getCoverUrl(track)} 
+            alt={track.title}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full bg-auvia-border flex items-center justify-center">
+            <span className="text-lg">🎵</span>
+          </div>
+        )}
+      </div>
+      
+      <div 
+        className="flex-1 min-w-0 cursor-pointer"
+        onClick={() => playTrackFromQueue(queueIndex + 1 + index)}
+      >
+        <p className="text-white font-medium truncate text-sm">{track.title}</p>
+        <p className="text-auvia-muted text-xs truncate">{track.artist_name}</p>
+      </div>
+      
+      <span className="text-auvia-muted text-xs flex-shrink-0">
+        {track.duration_formatted || formatDuration(track.duration)}
+      </span>
+      
+      <button
+        onClick={() => removeFromQueue(queueIndex + 1 + index)}
+        className="p-2 text-auvia-muted hover:text-red-400 touch-feedback flex-shrink-0"
+      >
+        <Trash2 size={16} />
+      </button>
+    </Reorder.Item>
+  )
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return '0:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
 
 // Get cover URL - prefer local endpoint for downloaded tracks
 const getCoverUrl = (track) => {
@@ -124,46 +196,15 @@ export default function Queue() {
               >
                 <AnimatePresence>
                   {upNext.map((track, index) => (
-                    <Reorder.Item
+                    <QueueItem
                       key={track.id || track.qobuz_id || index}
-                      value={track}
-                      className="flex items-center gap-3 p-3 bg-auvia-card/50 rounded-xl cursor-grab active:cursor-grabbing"
-                    >
-                      <GripVertical size={18} className="text-auvia-muted flex-shrink-0" />
-                      
-                      <div className="w-10 h-10 rounded overflow-hidden flex-shrink-0">
-                        {getCoverUrl(track) ? (
-                          <img 
-                            src={getCoverUrl(track)} 
-                            alt={track.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-auvia-border flex items-center justify-center">
-                            <span className="text-lg">🎵</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div 
-                        className="flex-1 min-w-0 cursor-pointer"
-                        onClick={() => playTrackFromQueue(queueIndex + 1 + index)}
-                      >
-                        <p className="text-white font-medium truncate text-sm">{track.title}</p>
-                        <p className="text-auvia-muted text-xs truncate">{track.artist_name}</p>
-                      </div>
-                      
-                      <span className="text-auvia-muted text-xs">
-                        {track.duration_formatted || formatDuration(track.duration)}
-                      </span>
-                      
-                      <button
-                        onClick={() => removeFromQueue(queueIndex + 1 + index)}
-                        className="p-2 text-auvia-muted hover:text-red-400 touch-feedback"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </Reorder.Item>
+                      track={track}
+                      index={index}
+                      queueIndex={queueIndex}
+                      playTrackFromQueue={playTrackFromQueue}
+                      removeFromQueue={removeFromQueue}
+                      getCoverUrl={getCoverUrl}
+                    />
                   ))}
                 </AnimatePresence>
               </Reorder.Group>
@@ -214,11 +255,4 @@ export default function Queue() {
       )}
     </div>
   )
-}
-
-function formatDuration(seconds) {
-  if (!seconds) return '0:00'
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
 }

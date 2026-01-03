@@ -249,10 +249,22 @@ export const usePlayerStore = create((set, get) => ({
     set({ queue: [...queue, track] })
   },
 
+  addTracksToQueue: (tracks) => {
+    const { queue } = get()
+    set({ queue: [...queue, ...tracks] })
+  },
+
   addToQueueNext: (track) => {
     const { queue, queueIndex } = get()
     const newQueue = [...queue]
     newQueue.splice(queueIndex + 1, 0, track)
+    set({ queue: newQueue })
+  },
+
+  addTracksToQueueNext: (tracks) => {
+    const { queue, queueIndex } = get()
+    const newQueue = [...queue]
+    newQueue.splice(queueIndex + 1, 0, ...tracks)
     set({ queue: newQueue })
   },
 

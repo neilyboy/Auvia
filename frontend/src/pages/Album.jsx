@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Play, Shuffle, Download, Check, Clock } from 'lucide-react'
 import TrackItem from '../components/TrackItem'
+import PlayActionModal from '../components/PlayActionModal'
 import api, { API_URL } from '../services/api'
 import { usePlayerStore } from '../stores/playerStore'
 import toast from 'react-hot-toast'
@@ -13,7 +14,8 @@ export default function Album() {
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
   const [playAfterDownload, setPlayAfterDownload] = useState(false)
-  const { setQueue, addToQueue } = usePlayerStore()
+  const { setQueue, addToQueue, addTracksToQueue, addTracksToQueueNext, currentTrack } = usePlayerStore()
+  const [playActionModal, setPlayActionModal] = useState({ open: false, tracks: null })
 
   useEffect(() => {
     fetchAlbum()
@@ -109,9 +111,14 @@ export default function Album() {
 
   const handlePlayAll = async () => {
     if (album?.tracks?.length > 0) {
-      setQueue(album.tracks)
-      toast.success(`Playing ${album.title}`)
-      navigate('/queue')
+      // If something is playing, show action modal
+      if (currentTrack) {
+        setPlayActionModal({ open: true, tracks: album.tracks })
+      } else {
+        setQueue(album.tracks)
+        toast.success(`Playing ${album.title}`)
+        navigate('/queue')
+      }
     } else if (album?.qobuz_url) {
       // Download and play when ready
       setPlayAfterDownload(true)
@@ -144,7 +151,12 @@ export default function Album() {
 
   const handlePlayTrack = (track, index) => {
     if (album?.tracks?.length > 0) {
-      setQueue(album.tracks, index)
+      // If something is playing, show action modal
+      if (currentTrack) {
+        setPlayActionModal({ open: true, tracks: album.tracks.slice(index) })
+      } else {
+        setQueue(album.tracks, index)
+      }
     } else {
       // Single track play with download
       toast.loading('Downloading...', { id: 'download' })
@@ -311,6 +323,32 @@ export default function Album() {
           )}
         </div>
       )}
+
+      {/* Play Action Modal */}
+      <PlayActionModal
+        isOpen={playActionModal.open}
+        onClose={() => setPlayActionModal({ open: false, tracks: null })}
+        onPlayNow={() => {
+          if (playActionModal.tracks) {
+            setQueue(playActionModal.tracks)
+            toast.success(`Playing ${album?.title}`)
+            navigate('/queue')
+          }
+        }}
+        onAddToQueue={() => {
+          if (playActionModal.tracks) {
+            addTracksToQueue(playActionModal.tracks)
+            toast.success(`Added to queue`)
+          }
+        }}
+        onPlayNext={() => {
+          if (playActionModal.tracks) {
+            addTracksToQueueNext(playActionModal.tracks)
+            toast.success(`Will play next`)
+          }
+        }}
+        title="Play Album"
+      />
     </div>
   )
 }
