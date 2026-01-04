@@ -50,6 +50,9 @@ const updateMediaSession = (track, isPlaying, actions) => {
   }
 }
 
+// Progress timer ID - kept outside store to avoid state update overhead
+let progressIntervalId = null
+
 // Clear Media Session (for iOS cleanup)
 const clearMediaSession = () => {
   if (!('mediaSession' in navigator)) return
@@ -89,8 +92,6 @@ export const usePlayerStore = create((set, get) => ({
   // Howler instance
   sound: null,
   
-  // Animation frame ID for progress timer cleanup
-  progressTimerId: null,
   
   // Loading states
   isLoading: false,
@@ -242,10 +243,9 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   stopProgressTimer: () => {
-    const { progressTimerId } = get()
-    if (progressTimerId) {
-      cancelAnimationFrame(progressTimerId)
-      set({ progressTimerId: null })
+    if (progressIntervalId) {
+      clearInterval(progressIntervalId)
+      progressIntervalId = null
     }
   },
 
@@ -256,7 +256,8 @@ export const usePlayerStore = create((set, get) => ({
     const { sound } = get()
     if (!sound) return
     
-    const update = () => {
+    // Use setInterval with 250ms (4 updates per second) - much lighter than 60fps requestAnimationFrame
+    progressIntervalId = setInterval(() => {
       const { sound, isPlaying, duration } = get()
       if (sound && isPlaying) {
         const currentTime = sound.seek() || 0
@@ -274,19 +275,11 @@ export const usePlayerStore = create((set, get) => ({
             // Ignore position state errors
           }
         }
-        
-        // Store the frame ID so we can cancel it later
-        const frameId = requestAnimationFrame(update)
-        set({ progressTimerId: frameId })
       } else {
-        // Not playing anymore, clear the timer ID
-        set({ progressTimerId: null })
+        // Not playing anymore, stop the timer
+        get().stopProgressTimer()
       }
-    }
-    
-    // Start the first frame
-    const frameId = requestAnimationFrame(update)
-    set({ progressTimerId: frameId })
+    }, 250) // Update 4 times per second - smooth enough for progress bar
   },
 
   // Queue management
@@ -345,7 +338,7 @@ export const usePlayerStore = create((set, get) => ({
     }
     // Clear Media Session for iOS
     clearMediaSession()
-    set({ queue: [], queueIndex: 0, currentTrack: null, sound: null, isPlaying: false, progressTimerId: null })
+    set({ queue: [], queueIndex: 0, currentTrack: null, sound: null, isPlaying: false })
   },
 
   playNext: async () => {
