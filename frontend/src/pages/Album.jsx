@@ -20,6 +20,8 @@ export default function Album() {
   const [directDownloadEnabled, setDirectDownloadEnabled] = useState(false)
   const [downloadQualityModal, setDownloadQualityModal] = useState(false)
   const [directDownloading, setDirectDownloading] = useState(false)
+  const [pendingTrack, setPendingTrack] = useState(null) // Track to play/queue after download
+  const [pendingAction, setPendingAction] = useState(null) // 'play' or 'queue'
 
   useEffect(() => {
     fetchAlbum()
@@ -118,15 +120,41 @@ export default function Album() {
           if (album.artist_name) params.artist = album.artist_name
           const response = await api.get(`/music/albums/by-qobuz/${album.qobuz_id}`, { params })
           if (response.data?.found && response.data?.album?.is_downloaded && response.data?.album?.tracks?.length > 0) {
-            setAlbum(response.data.album)
+            const downloadedAlbum = response.data.album
+            setAlbum(downloadedAlbum)
             setDownloading(false)
-            toast.success('Download complete!', { id: 'download' })
             
-            // If play was requested, start playing
-            if (playAfterDownload && response.data.album.tracks?.length > 0) {
-              setQueue(response.data.album.tracks)
+            // Handle pending track action (single track download and play/queue)
+            if (pendingTrack && pendingAction) {
+              // Find the downloaded track by matching qobuz_id or title
+              const downloadedTrack = downloadedAlbum.tracks.find(
+                t => t.qobuz_id === pendingTrack.qobuz_id || 
+                     t.title.toLowerCase() === pendingTrack.title.toLowerCase()
+              )
+              
+              if (downloadedTrack) {
+                if (pendingAction === 'play') {
+                  toast.success(`Now playing "${downloadedTrack.title}"`, { id: 'track-download' })
+                  setQueue([downloadedTrack])
+                } else if (pendingAction === 'queue') {
+                  toast.success(`Added "${downloadedTrack.title}" to queue`, { id: 'track-download' })
+                  addToQueue(downloadedTrack)
+                }
+              } else {
+                toast.error('Track not found after download', { id: 'track-download' })
+              }
+              
+              setPendingTrack(null)
+              setPendingAction(null)
+            } else if (playAfterDownload && downloadedAlbum.tracks?.length > 0) {
+              // Full album play was requested
+              toast.success('Download complete!', { id: 'download' })
+              setQueue(downloadedAlbum.tracks)
               setPlayAfterDownload(false)
               navigate('/queue')
+            } else {
+              toast.success('Download complete!', { id: 'download' })
+              toast.dismiss('track-download')
             }
           }
         } catch (error) {
@@ -138,7 +166,7 @@ export default function Album() {
     return () => {
       if (pollInterval) clearInterval(pollInterval)
     }
-  }, [downloading, album?.qobuz_id, playAfterDownload, navigate, setQueue])
+  }, [downloading, album?.qobuz_id, playAfterDownload, pendingTrack, pendingAction, navigate, setQueue, addToQueue])
 
   const fetchAlbum = async () => {
     setLoading(true)
@@ -223,26 +251,60 @@ export default function Album() {
   }
 
   const handlePlayTrack = (track, index) => {
-    if (album?.tracks?.length > 0) {
-      // If something is playing, show action modal for just this track
+    // Check if track is downloaded (has file_path or is_downloaded)
+    if (track.is_downloaded && track.file_path) {
+      // Track is available locally - play it
       if (currentTrack) {
         setPlayActionModal({ open: true, tracks: [track], isSingleTrack: true })
       } else {
-        // When nothing is playing, play just this track
         setQueue([track])
       }
     } else {
-      // Single track play with download
-      toast.loading('Downloading...', { id: 'download' })
-      api.post('/queue/add', {
-        qobuz_track_id: track.qobuz_id,
-        qobuz_album_url: album?.qobuz_url,
-        play_now: true
-      }).then(() => {
-        toast.success('Track queued', { id: 'download' })
-      }).catch(() => {
-        toast.error('Failed to queue track', { id: 'download' })
+      // Track needs to be downloaded first
+      handleDownloadAndPlay(track, 'play')
+    }
+  }
+
+  const handleAddTrackToQueue = (track) => {
+    // Check if track is downloaded
+    if (track.is_downloaded && track.file_path) {
+      addToQueue(track)
+      toast.success('Added to queue')
+    } else {
+      // Track needs to be downloaded first
+      handleDownloadAndPlay(track, 'queue')
+    }
+  }
+
+  const handleDownloadAndPlay = async (track, action) => {
+    if (!album?.qobuz_url) {
+      toast.error('Album URL not available')
+      return
+    }
+
+    // Store the pending track and action
+    setPendingTrack(track)
+    setPendingAction(action)
+    setDownloading(true)
+
+    const actionText = action === 'play' ? 'Playing' : 'Queuing'
+    toast.loading(`Downloading "${track.title}"...`, { id: 'track-download' })
+
+    try {
+      // Start the album download
+      await api.post('/music/download', {
+        qobuz_url: album.qobuz_url
       })
+      
+      // Update toast to show we're waiting for download
+      toast.loading(`Downloading album for "${track.title}"...`, { id: 'track-download' })
+      
+    } catch (error) {
+      console.error('Download failed:', error)
+      toast.error('Failed to start download', { id: 'track-download' })
+      setDownloading(false)
+      setPendingTrack(null)
+      setPendingAction(null)
     }
   }
 
@@ -392,7 +454,7 @@ export default function Album() {
               track={track}
               index={index}
               onPlay={() => handlePlayTrack(track, index)}
-              onAddToQueue={() => addToQueue(track)}
+              onAddToQueue={() => handleAddTrackToQueue(track)}
             />
           ))}
         </div>
