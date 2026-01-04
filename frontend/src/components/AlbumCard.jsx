@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { Play, Download, Check } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { API_URL } from '../services/api'
+import LazyImage from './LazyImage'
 
 export default function AlbumCard({ album, onPlay, compact = false }) {
   const navigate = useNavigate()
@@ -32,18 +33,16 @@ export default function AlbumCard({ album, onPlay, compact = false }) {
         onClick={handleClick}
       >
         <div className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 relative group">
-          {coverUrl ? (
-            <img 
-              src={coverUrl} 
-              alt={album.title}
-              className="w-full h-full object-cover"
-              loading="lazy"
-            />
-          ) : (
-            <div className="w-full h-full bg-auvia-border flex items-center justify-center">
-              <span className="text-2xl">💿</span>
-            </div>
-          )}
+          <LazyImage
+            src={coverUrl}
+            alt={album.title}
+            className="w-full h-full"
+            fallback={
+              <div className="w-full h-full bg-auvia-border flex items-center justify-center">
+                <span className="text-2xl">💿</span>
+              </div>
+            }
+          />
           {onPlay && (
             <button
               onClick={(e) => { e.stopPropagation(); onPlay(album); }}
@@ -71,18 +70,16 @@ export default function AlbumCard({ album, onPlay, compact = false }) {
       onClick={handleClick}
     >
       <div className="relative aspect-square rounded-xl overflow-hidden mb-2 group shadow-lg">
-        {coverUrl ? (
-          <img 
-            src={coverUrl} 
-            alt={album.title}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-full bg-auvia-card flex items-center justify-center">
-            <span className="text-5xl">💿</span>
-          </div>
-        )}
+        <LazyImage
+          src={coverUrl}
+          alt={album.title}
+          className="w-full h-full"
+          fallback={
+            <div className="w-full h-full bg-auvia-card flex items-center justify-center">
+              <span className="text-5xl">💿</span>
+            </div>
+          }
+        />
         
         {/* Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
