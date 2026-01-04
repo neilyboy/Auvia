@@ -15,16 +15,24 @@ import Setup from './pages/Setup'
 function App() {
   const { checkSetupStatus, setupStatus, loading } = useAuthStore()
   const initMediaSession = usePlayerStore((state) => state.initMediaSession)
-  const clearQueue = usePlayerStore((state) => state.clearQueue)
+  const restoreQueue = usePlayerStore((state) => state.restoreQueue)
 
   useEffect(() => {
     checkSetupStatus()
     // Initialize Media Session API for Bluetooth/hardware button support
     initMediaSession()
+    // Restore queue from localStorage (doesn't auto-play, just restores state)
+    restoreQueue()
     
-    // Cleanup Media Session on page close/hide for iOS
+    // Cleanup Media Session on page close/hide for iOS (but preserve queue in localStorage)
     const handleBeforeUnload = () => {
-      clearQueue()
+      // Don't clear queue - we want it to persist!
+      // Just clear media session for iOS
+      if ('mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.playbackState = 'none'
+        } catch (e) {}
+      }
     }
     
     const handleVisibilityChange = () => {
@@ -52,7 +60,7 @@ function App() {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [checkSetupStatus, initMediaSession, clearQueue])
+  }, [checkSetupStatus, initMediaSession, restoreQueue])
 
   if (loading) {
     return (

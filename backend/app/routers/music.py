@@ -481,8 +481,16 @@ async def check_track_availability(track_id: int, db: AsyncSession = Depends(get
 
 
 @router.get("/cover/{album_id}")
-async def get_album_cover(album_id: int, db: AsyncSession = Depends(get_db)):
-    """Serve local album cover art"""
+async def get_album_cover(
+    album_id: int, 
+    size: int = None,  # Optional size (e.g., 300 for 300x300)
+    format: str = None,  # Optional format: 'webp' or 'jpeg'
+    db: AsyncSession = Depends(get_db)
+):
+    """Serve local album cover art with optional resizing and format conversion"""
+    from PIL import Image
+    from io import BytesIO
+    
     result = await db.execute(
         select(Album).where(Album.id == album_id)
     )
@@ -491,44 +499,115 @@ async def get_album_cover(album_id: int, db: AsyncSession = Depends(get_db)):
     if not album:
         raise HTTPException(status_code=404, detail="Album not found")
     
+    # Find cover art path
+    cover_path = None
+    
     # Try local cover art first
     if album.cover_art_local and os.path.exists(album.cover_art_local):
+        cover_path = album.cover_art_local
+    else:
+        # Fall back to download path + cover.jpg
+        cover_names = ['cover.jpg', 'cover.jpeg', 'cover.png', 'folder.jpg', 'front.jpg']
+        if album.download_path:
+            # Check in download path
+            for cover_name in cover_names:
+                path = os.path.join(album.download_path, cover_name)
+                if os.path.exists(path):
+                    cover_path = path
+                    album.cover_art_local = path
+                    await db.commit()
+                    break
+            
+            # For multi-disc albums, check parent directory
+            if not cover_path:
+                parent_dir = os.path.dirname(album.download_path)
+                if parent_dir:
+                    for cover_name in cover_names:
+                        path = os.path.join(parent_dir, cover_name)
+                        if os.path.exists(path):
+                            cover_path = path
+                            album.cover_art_local = path
+                            await db.commit()
+                            break
+    
+    if not cover_path:
+        raise HTTPException(status_code=404, detail="Cover art not found")
+    
+    # If no optimization requested, serve original file
+    if not size and not format:
         return FileResponse(
-            album.cover_art_local,
+            cover_path,
             media_type="image/jpeg",
             headers={"Cache-Control": "public, max-age=86400"}
         )
     
-    # Fall back to download path + cover.jpg
-    cover_names = ['cover.jpg', 'cover.jpeg', 'cover.png', 'folder.jpg', 'front.jpg']
-    if album.download_path:
-        # Check in download path
-        for cover_name in cover_names:
-            cover_path = os.path.join(album.download_path, cover_name)
-            if os.path.exists(cover_path):
-                album.cover_art_local = cover_path
-                await db.commit()
+    # Optimize the image
+    try:
+        # Check for cached optimized version
+        cache_dir = "/tmp/auvia_cover_cache"
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        size_str = str(size) if size else "orig"
+        fmt = format.lower() if format else "jpeg"
+        if fmt not in ['webp', 'jpeg', 'jpg']:
+            fmt = 'jpeg'
+        if fmt == 'jpg':
+            fmt = 'jpeg'
+            
+        cache_key = f"{album_id}_{size_str}_{fmt}"
+        cache_path = os.path.join(cache_dir, f"{cache_key}.{fmt if fmt != 'jpeg' else 'jpg'}")
+        
+        # Return cached version if exists and newer than original
+        if os.path.exists(cache_path):
+            cache_mtime = os.path.getmtime(cache_path)
+            orig_mtime = os.path.getmtime(cover_path)
+            if cache_mtime > orig_mtime:
+                media_type = "image/webp" if fmt == "webp" else "image/jpeg"
                 return FileResponse(
-                    cover_path,
-                    media_type="image/jpeg",
+                    cache_path,
+                    media_type=media_type,
                     headers={"Cache-Control": "public, max-age=86400"}
                 )
         
-        # For multi-disc albums, check parent directory
-        parent_dir = os.path.dirname(album.download_path)
-        if parent_dir:
-            for cover_name in cover_names:
-                cover_path = os.path.join(parent_dir, cover_name)
-                if os.path.exists(cover_path):
-                    album.cover_art_local = cover_path
-                    await db.commit()
-                    return FileResponse(
-                        cover_path,
-                        media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=86400"}
-                    )
-    
-    raise HTTPException(status_code=404, detail="Cover art not found")
+        # Process image
+        with Image.open(cover_path) as img:
+            # Convert to RGB if necessary (for PNG with transparency)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                img = img.convert('RGB')
+            
+            # Resize if size specified
+            if size:
+                # Maintain aspect ratio, fit within size x size
+                img.thumbnail((size, size), Image.Resampling.LANCZOS)
+            
+            # Save to buffer
+            buffer = BytesIO()
+            if fmt == 'webp':
+                img.save(buffer, format='WEBP', quality=85, method=4)
+                media_type = "image/webp"
+            else:
+                img.save(buffer, format='JPEG', quality=85, optimize=True)
+                media_type = "image/jpeg"
+            
+            # Cache the result
+            buffer.seek(0)
+            with open(cache_path, 'wb') as f:
+                f.write(buffer.read())
+            
+            buffer.seek(0)
+            return Response(
+                content=buffer.read(),
+                media_type=media_type,
+                headers={"Cache-Control": "public, max-age=86400"}
+            )
+    except Exception as e:
+        # Fall back to original file on error
+        print(f"Cover optimization error: {e}")
+        return FileResponse(
+            cover_path,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"}
+        )
 
 
 @router.get("/stream/{track_id}")
