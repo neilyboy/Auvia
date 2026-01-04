@@ -190,12 +190,17 @@ class MusicService:
         )
         track = result.scalar_one_or_none()
         if track:
-            # Update existing track
+            # Update existing track - including artist/album if they were wrong
             track.title = title
             track.track_number = track_number
             track.disc_number = disc_number
             track.duration = duration
             track.is_downloaded = True
+            # Fix artist/album if we now have better data
+            if artist and artist.name != "Unknown Artist":
+                track.artist_id = artist.id
+            if album and album.artist_id == artist.id:
+                track.album_id = album.id
             await self.db.commit()
             return track
         
@@ -287,14 +292,18 @@ class MusicService:
                     
                     # Ensure all required fields have valid values (not None or empty)
                     artist_name = metadata.get("artist")
-                    if not artist_name or (isinstance(artist_name, str) and not artist_name.strip()):
-                        artist_name = "Unknown Artist"
-                    
                     album_title = metadata.get("album")
-                    if not album_title or (isinstance(album_title, str) and not album_title.strip()):
-                        album_title = self._extract_album_from_path(root) or "Unknown Album"
-                    
                     track_title = metadata.get("title")
+                    
+                    # Always try to extract from folder name if artist/album missing
+                    # Folder format is typically "Artist - Album (Year)"
+                    if not artist_name or not album_title or artist_name == "Unknown Artist":
+                        folder_artist, folder_album = self._extract_artist_album_from_path(root)
+                        if not artist_name or (isinstance(artist_name, str) and not artist_name.strip()) or artist_name == "Unknown Artist":
+                            artist_name = folder_artist or "Unknown Artist"
+                        if not album_title or (isinstance(album_title, str) and not album_title.strip()):
+                            album_title = folder_album or self._extract_album_from_path(root) or "Unknown Album"
+                    
                     if not track_title or (isinstance(track_title, str) and not track_title.strip()):
                         track_title = self._clean_filename_for_title(filename)
                     
@@ -469,13 +478,26 @@ class MusicService:
             print(f"Error extracting metadata from path {file_path}: {e}")
             return None
     
+    def _extract_artist_album_from_path(self, directory: str) -> tuple:
+        """Extract artist and album from directory path (e.g., 'Artist - Album (Year)')"""
+        import re
+        dir_name = os.path.basename(directory)
+        
+        # Pattern: "Artist - Album (Year)" or "Artist - Album"
+        match = re.match(r'^(.+?)\s+-\s+(.+?)(?:\s*\(\d{4}\))?$', dir_name)
+        if match:
+            return match.group(1).strip(), match.group(2).strip()
+        
+        # No match - return None for artist, use dir_name as album
+        return None, dir_name if dir_name else None
+    
     def _extract_album_from_path(self, directory: str) -> Optional[str]:
         """Extract album name from directory path"""
         import re
         dir_name = os.path.basename(directory)
         
         # Pattern: "Artist - Album (Year)" -> extract Album
-        match = re.match(r'^.+?\s*-\s*(.+?)(?:\s*\(\d{4}\))?$', dir_name)
+        match = re.match(r'^.+?\s+-\s+(.+?)(?:\s*\(\d{4}\))?$', dir_name)
         if match:
             return match.group(1).strip()
         
