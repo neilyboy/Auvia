@@ -231,8 +231,15 @@ class MusicService:
         
         return track
     
-    async def scan_directory(self, directory: str) -> dict:
-        """Scan a directory for music files and add them to the database"""
+    async def scan_directory(self, directory: str, qobuz_album_id: str = None, qobuz_url: str = None) -> dict:
+        """
+        Scan a directory for music files and add them to the database.
+        
+        Args:
+            directory: Path to scan
+            qobuz_album_id: Optional Qobuz album ID to link with scanned album
+            qobuz_url: Optional Qobuz URL to link with scanned album
+        """
         stats = {"albums": 0, "tracks": 0, "errors": 0}
         
         supported_extensions = {'.mp3', '.flac', '.m4a', '.ogg', '.wav'}
@@ -294,12 +301,20 @@ class MusicService:
                     # Get or create artist
                     artist = await self.get_or_create_artist(artist_name)
                     
-                    # Get or create album
+                    # Get or create album (link with qobuz_id if provided)
                     album = await self.get_or_create_album(
                         title=album_title,
                         artist=artist,
+                        qobuz_id=qobuz_album_id,
+                        qobuz_url=qobuz_url,
                         genre=metadata.get("genre")
                     )
+                    
+                    # Update qobuz_id if not set but we have it
+                    if qobuz_album_id and not album.qobuz_id:
+                        album.qobuz_id = qobuz_album_id
+                    if qobuz_url and not album.qobuz_url:
+                        album.qobuz_url = qobuz_url
                     
                     if not album.is_downloaded:
                         album.is_downloaded = True

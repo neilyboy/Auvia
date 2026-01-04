@@ -113,9 +113,16 @@ class DownloadService:
                     task.status = "completed"
                     task.completed_at = datetime.utcnow()
                     
-                    # Scan downloaded files and add to database
+                    # Extract qobuz_id from URL for linking
+                    qobuz_album_id = task.qobuz_url.rstrip('/').split('/')[-1]
+                    
+                    # Scan downloaded files and add to database with qobuz_id
                     music_service = MusicService(db)
-                    await music_service.scan_directory(output_path or download_path)
+                    await music_service.scan_directory(
+                        output_path or download_path,
+                        qobuz_album_id=qobuz_album_id,
+                        qobuz_url=task.qobuz_url
+                    )
                     
                     # Queue tracks if requested
                     if play_now or play_next:
