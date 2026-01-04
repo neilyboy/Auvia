@@ -190,6 +190,7 @@ async def get_storage_locations(
             name=location.name,
             path=location.path,
             is_primary=location.is_primary,
+            is_active=location.is_active,
             total_space=total_space or location.total_space,
             free_space=free_space or location.free_space,
             created_at=location.created_at,

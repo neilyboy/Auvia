@@ -339,6 +339,10 @@ class QobuzService:
                 else:
                     release_date = None
                 
+                # Debug: print cover URL for first few albums
+                if len(albums) < 3:
+                    print(f"Album: {item.get('title')} - Cover URL: {cover_art_url}")
+                
                 albums.append(AlbumResponse(
                     title=item.get("title", "Unknown Album"),
                     artist_name=artist_name,
