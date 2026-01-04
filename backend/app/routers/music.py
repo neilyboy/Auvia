@@ -209,13 +209,18 @@ async def get_album(album_id: int, db: AsyncSession = Depends(get_db)):
         for track in sorted(album.tracks, key=lambda t: (t.disc_number or 1, t.track_number or 0))
     ]
     
+    # Construct qobuz_url from qobuz_id if not present
+    qobuz_url = album.qobuz_url
+    if not qobuz_url and album.qobuz_id:
+        qobuz_url = f"https://www.qobuz.com/us-en/album/-/{album.qobuz_id}"
+    
     return AlbumResponse(
         id=album.id,
         title=album.title,
         artist_name=album.artist.name,
         artist_id=album.artist_id,
         qobuz_id=album.qobuz_id,
-        qobuz_url=album.qobuz_url,
+        qobuz_url=qobuz_url,
         cover_art_url=album.cover_art_url,
         cover_art_local=album.cover_art_local,
         release_date=album.release_date,
@@ -291,6 +296,18 @@ async def stream_track(track_id: int, db: AsyncSession = Depends(get_db)):
         media_type=mime_type,
         filename=f"{track.title}{ext}"
     )
+
+
+@router.get("/albums/qobuz/{qobuz_id}", response_model=AlbumResponse)
+async def get_qobuz_album(qobuz_id: str):
+    """Get album details including tracks from Qobuz API"""
+    qobuz_service = await QobuzService.create()
+    album = await qobuz_service.get_album(qobuz_id)
+    
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found on Qobuz")
+    
+    return album
 
 
 @router.get("/artists", response_model=List[ArtistResponse])
@@ -641,9 +658,15 @@ async def direct_download_album(
                 detail="Download failed"
             )
         
-        # Find downloaded files
+        # Find downloaded files and extract album info
         downloaded_files = []
+        album_folder_name = None
         for root, dirs, files in os.walk(temp_dir):
+            # Get the first-level folder name as album info
+            rel_root = os.path.relpath(root, temp_dir)
+            if rel_root != "." and album_folder_name is None:
+                album_folder_name = rel_root.split(os.sep)[0]
+            
             for file in files:
                 if file.endswith(('.mp3', '.flac', '.jpg', '.png', '.pdf')):
                     downloaded_files.append(os.path.join(root, file))
@@ -654,20 +677,40 @@ async def direct_download_album(
                 detail="No files downloaded"
             )
         
-        # Create zip file
+        # Parse album folder name and create clean format
+        # Streamrip typically creates: "Artist - Title (Year)" or similar
+        import re
+        album_name = album_folder_name or "Album"
+        
+        # Try to extract and format nicely: "Artist - Title (Year)"
+        # Title case the album name for cleaner appearance
+        def title_case_preserve(s):
+            # Title case but preserve certain patterns
+            words = s.split()
+            result = []
+            for word in words:
+                if word.isupper() and len(word) <= 4:  # Keep short acronyms
+                    result.append(word)
+                elif word.startswith('(') or word.endswith(')'):
+                    result.append(word)
+                else:
+                    result.append(word.capitalize())
+            return ' '.join(result)
+        
+        # Clean up the album name
+        clean_album_name = title_case_preserve(album_name)
+        
+        # Create clean ZIP folder name with quality tag
+        zip_folder_name = f"{clean_album_name} [{quality_tag}]"
+        
+        # Create zip file with flat structure
         zip_path = os.path.join(temp_dir, "album.zip")
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file_path in downloaded_files:
-                arcname = os.path.relpath(file_path, temp_dir)
+                # Get just the filename, place directly in the clean folder
+                filename = os.path.basename(file_path)
+                arcname = f"{zip_folder_name}/{filename}"
                 zipf.write(file_path, arcname)
-        
-        # Get album name from folder structure for filename
-        album_name = "album"
-        for item in os.listdir(temp_dir):
-            item_path = os.path.join(temp_dir, item)
-            if os.path.isdir(item_path) and item != "__pycache__":
-                album_name = item
-                break
         
         # Stream the zip file
         async def stream_and_cleanup():
@@ -681,7 +724,7 @@ async def direct_download_album(
                 shutil.rmtree(temp_dir, ignore_errors=True)
         
         # Sanitize filename and add quality tag
-        safe_name = "".join(c for c in album_name if c.isalnum() or c in (' ', '-', '_')).strip()
+        safe_name = "".join(c for c in clean_album_name if c.isalnum() or c in (' ', '-', '_', '(', ')')).strip()
         filename_with_quality = f"{safe_name} [{quality_tag}].zip"
         
         return StreamingResponse(

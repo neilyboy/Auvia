@@ -147,27 +147,9 @@ export default function Album() {
       if (id.startsWith('qobuz-')) {
         const qobuzId = id.replace('qobuz-', '')
         
-        // First fetch album info from Qobuz to get title/artist
-        let qobuzAlbum = null
+        // First check if we have a local copy
         try {
-          const qobuzResponse = await api.get('/search/albums', {
-            params: { q: qobuzId, limit: 1 }
-          })
-          if (qobuzResponse.data?.length > 0) {
-            qobuzAlbum = qobuzResponse.data[0]
-          }
-        } catch (e) {
-          console.log('Could not fetch Qobuz album info')
-        }
-        
-        // Now check if we have a local copy by qobuz_id OR title+artist
-        try {
-          const params = {}
-          if (qobuzAlbum) {
-            params.title = qobuzAlbum.title
-            params.artist = qobuzAlbum.artist_name
-          }
-          const localResponse = await api.get(`/music/albums/by-qobuz/${qobuzId}`, { params })
+          const localResponse = await api.get(`/music/albums/by-qobuz/${qobuzId}`)
           if (localResponse.data?.found && localResponse.data?.album?.is_downloaded) {
             // Use local version - it has tracks
             setAlbum(localResponse.data.album)
@@ -175,12 +157,18 @@ export default function Album() {
             return
           }
         } catch (e) {
-          // No local copy, continue to use Qobuz data
+          // No local copy, continue to fetch from Qobuz
         }
         
-        // Use Qobuz album data
-        if (qobuzAlbum) {
-          setAlbum(qobuzAlbum)
+        // Fetch full album details including tracks from Qobuz API
+        try {
+          const qobuzResponse = await api.get(`/music/albums/qobuz/${qobuzId}`)
+          if (qobuzResponse.data) {
+            setAlbum(qobuzResponse.data)
+          }
+        } catch (e) {
+          console.error('Could not fetch Qobuz album info:', e)
+          toast.error('Failed to load album from Qobuz')
         }
       } else {
         const response = await api.get(`/music/albums/${id}`)
