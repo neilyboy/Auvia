@@ -276,6 +276,7 @@ def merge_album_results(local: List[AlbumResponse], remote) -> List[AlbumRespons
 def merge_track_results(local: List[TrackResponse], remote) -> List[TrackResponse]:
     """Merge local and remote track results, prioritizing local"""
     seen_qobuz_ids = set()
+    seen_title_artist = set()  # For matching by title+artist when no qobuz_id
     merged = []
     
     for track in local:
@@ -283,12 +284,33 @@ def merge_track_results(local: List[TrackResponse], remote) -> List[TrackRespons
         qobuz_id = get_attr(track, 'qobuz_id')
         if qobuz_id:
             seen_qobuz_ids.add(qobuz_id)
+        # Also track by normalized title+artist for matching
+        key = (
+            normalize_title(get_attr(track, 'title', '')),
+            normalize_title(get_attr(track, 'artist_name', '')),
+            normalize_title(get_attr(track, 'album_title', ''))
+        )
+        seen_title_artist.add(key)
     
     for track in remote:
         qobuz_id = get_attr(track, 'qobuz_id')
-        if qobuz_id and qobuz_id not in seen_qobuz_ids:
-            merged.append(track)
+        # Skip if we have this qobuz_id locally
+        if qobuz_id and qobuz_id in seen_qobuz_ids:
+            continue
+        
+        # Skip if we have a track with same title+artist+album locally
+        key = (
+            normalize_title(get_attr(track, 'title', '')),
+            normalize_title(get_attr(track, 'artist_name', '')),
+            normalize_title(get_attr(track, 'album_title', ''))
+        )
+        if key in seen_title_artist:
+            continue
+        
+        merged.append(track)
+        if qobuz_id:
             seen_qobuz_ids.add(qobuz_id)
+        seen_title_artist.add(key)
     
     return merged
 
