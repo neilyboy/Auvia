@@ -64,6 +64,14 @@ async def get_albums(
     result = await db.execute(query)
     albums = result.scalars().all()
     
+    def get_qobuz_url(album):
+        """Construct qobuz_url from qobuz_id if not present"""
+        if album.qobuz_url:
+            return album.qobuz_url
+        if album.qobuz_id:
+            return f"https://www.qobuz.com/us-en/album/-/{album.qobuz_id}"
+        return None
+    
     return [
         AlbumResponse(
             id=album.id,
@@ -71,7 +79,7 @@ async def get_albums(
             artist_name=album.artist.name,
             artist_id=album.artist_id,
             qobuz_id=album.qobuz_id,
-            qobuz_url=album.qobuz_url,
+            qobuz_url=get_qobuz_url(album),
             cover_art_url=album.cover_art_url,
             cover_art_local=album.cover_art_local,
             release_date=album.release_date,
@@ -154,6 +162,11 @@ async def get_album_by_qobuz_id(
         for track in sorted(album.tracks, key=lambda t: (t.disc_number or 1, t.track_number or 0))
     ]
     
+    # Construct qobuz_url from qobuz_id if not present
+    qobuz_url = album.qobuz_url
+    if not qobuz_url and album.qobuz_id:
+        qobuz_url = f"https://www.qobuz.com/us-en/album/-/{album.qobuz_id}"
+    
     return {
         "found": True,
         "album": AlbumResponse(
@@ -162,7 +175,7 @@ async def get_album_by_qobuz_id(
             artist_name=album.artist.name,
             artist_id=album.artist_id,
             qobuz_id=album.qobuz_id,
-            qobuz_url=album.qobuz_url,
+            qobuz_url=qobuz_url,
             cover_art_url=album.cover_art_url,
             cover_art_local=album.cover_art_local,
             release_date=album.release_date,
