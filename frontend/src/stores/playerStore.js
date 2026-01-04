@@ -460,7 +460,7 @@ export const usePlayerStore = create((set, get) => ({
   // Refresh queue from backend (call after download completes)
   refreshQueue: async () => {
     try {
-      const response = await api.get('/queue')
+      const response = await api.get('/queue/')
       const backendQueue = response.data
       
       if (backendQueue && backendQueue.length > 0) {

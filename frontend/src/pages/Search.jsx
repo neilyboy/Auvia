@@ -258,7 +258,6 @@ export default function Search() {
                 qobuz_album_url: track.qobuz_album_url,
                 play_now: true
               })
-              toast.success('Downloading - will play when ready')
               // Navigate to album page to see download progress
               navigate(`/album/qobuz-${qobuzId}`)
             } catch (error) {
@@ -287,7 +286,7 @@ export default function Search() {
                 qobuz_album_url: track.qobuz_album_url,
                 play_now: false
               })
-              toast.success('Downloading - will add to queue when ready')
+              // Banner shows download status
             } catch (error) {
               removeDownload(downloadId)
               toast.error('Failed to start download')
@@ -314,7 +313,7 @@ export default function Search() {
                 qobuz_album_url: track.qobuz_album_url,
                 play_next: true
               })
-              toast.success('Downloading - will play next when ready')
+              // Banner shows download status
             } catch (error) {
               removeDownload(downloadId)
               toast.error('Failed to start download')
