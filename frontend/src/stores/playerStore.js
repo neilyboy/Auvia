@@ -228,6 +228,11 @@ export const usePlayerStore = create((set, get) => ({
         get().startProgressTimer()
         // Update Media Session
         updateMediaSession(track, true, get().getMediaSessionActions())
+        // Record play history (fire and forget)
+        if (track.id) {
+          fetch(`${API_URL}/api/music/history/${track.id}`, { method: 'POST' })
+            .catch(() => {}) // Ignore errors
+        }
       },
       onpause: () => {
         console.log('Paused:', track.title)

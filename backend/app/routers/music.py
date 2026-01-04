@@ -382,6 +382,27 @@ async def get_artist_albums(artist_id: int, db: AsyncSession = Depends(get_db)):
     ]
 
 
+@router.post("/history/{track_id}")
+async def record_play(track_id: int, db: AsyncSession = Depends(get_db)):
+    """Record that a track was played"""
+    # Verify track exists
+    result = await db.execute(select(Track).where(Track.id == track_id))
+    track = result.scalar_one_or_none()
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+    
+    # Update track play count and last played
+    track.play_count = (track.play_count or 0) + 1
+    track.last_played = func.now()
+    
+    # Add to play history
+    history = PlayHistory(track_id=track_id)
+    db.add(history)
+    await db.commit()
+    
+    return {"status": "recorded", "track_id": track_id, "play_count": track.play_count}
+
+
 @router.get("/history", response_model=List[PlayHistoryResponse])
 async def get_play_history(
     page: int = 1,
