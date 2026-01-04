@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Play, Shuffle, Download, Check, Clock } from 'lucide-react'
+import { ArrowLeft, Play, Shuffle, Download, Check, Clock, HardDriveDownload } from 'lucide-react'
 import TrackItem from '../components/TrackItem'
 import PlayActionModal from '../components/PlayActionModal'
+import DownloadQualityModal from '../components/DownloadQualityModal'
 import api, { API_URL } from '../services/api'
 import { usePlayerStore } from '../stores/playerStore'
 import toast from 'react-hot-toast'
@@ -16,10 +17,72 @@ export default function Album() {
   const [playAfterDownload, setPlayAfterDownload] = useState(false)
   const { setQueue, addToQueue, addTracksToQueue, addTracksToQueueNext, currentTrack } = usePlayerStore()
   const [playActionModal, setPlayActionModal] = useState({ open: false, tracks: null })
+  const [directDownloadEnabled, setDirectDownloadEnabled] = useState(false)
+  const [downloadQualityModal, setDownloadQualityModal] = useState(false)
+  const [directDownloading, setDirectDownloading] = useState(false)
 
   useEffect(() => {
     fetchAlbum()
+    checkDirectDownloadEnabled()
   }, [id])
+
+  const checkDirectDownloadEnabled = async () => {
+    try {
+      const response = await api.get('/music/direct-download-enabled')
+      setDirectDownloadEnabled(response.data.enabled)
+    } catch (error) {
+      setDirectDownloadEnabled(false)
+    }
+  }
+
+  const handleDirectDownload = async (quality) => {
+    if (!album?.qobuz_url) {
+      toast.error('Album URL not available')
+      return
+    }
+    
+    setDirectDownloading(true)
+    setDownloadQualityModal(false)
+    toast.loading('Preparing download...', { id: 'direct-download' })
+    
+    try {
+      const response = await api.post('/music/direct-download', null, {
+        params: { qobuz_url: album.qobuz_url, quality },
+        responseType: 'blob',
+        timeout: 600000 // 10 minute timeout for large albums
+      })
+      
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      
+      // Get filename from content-disposition header or use album title
+      const contentDisposition = response.headers['content-disposition']
+      let filename = `${album.title}.zip`
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="(.+)"/)
+        if (match) filename = match[1]
+      }
+      
+      link.setAttribute('download', filename)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      
+      toast.success('Download started!', { id: 'direct-download' })
+    } catch (error) {
+      console.error('Direct download failed:', error)
+      if (error.response?.status === 403) {
+        toast.error('Direct downloads are disabled', { id: 'direct-download' })
+      } else {
+        toast.error('Download failed', { id: 'direct-download' })
+      }
+    } finally {
+      setDirectDownloading(false)
+    }
+  }
   
   // Poll for download completion
   useEffect(() => {
@@ -293,6 +356,19 @@ export default function Album() {
                 {downloading ? 'Downloading...' : 'Download'}
               </button>
             )}
+            {directDownloadEnabled && album.qobuz_url && (
+              <button
+                onClick={() => setDownloadQualityModal(true)}
+                disabled={directDownloading}
+                className={`flex items-center gap-2 px-4 py-3 rounded-full text-white font-medium touch-feedback ${
+                  directDownloading ? 'bg-green-600/50 cursor-wait' : 'bg-green-600 hover:bg-green-700'
+                }`}
+                title="Download to your device"
+              >
+                <HardDriveDownload size={18} className={directDownloading ? 'animate-pulse' : ''} />
+                <span className="hidden sm:inline">{directDownloading ? 'Preparing...' : 'Save'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -352,6 +428,15 @@ export default function Album() {
           }
         }}
         title={playActionModal.isSingleTrack ? "Play Track" : "Play Album"}
+      />
+
+      {/* Download Quality Modal */}
+      <DownloadQualityModal
+        isOpen={downloadQualityModal}
+        onClose={() => setDownloadQualityModal(false)}
+        onDownload={handleDirectDownload}
+        albumTitle={album?.title}
+        isDownloading={directDownloading}
       />
     </div>
   )

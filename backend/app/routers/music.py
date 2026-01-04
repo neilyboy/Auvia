@@ -9,12 +9,14 @@ import aiofiles
 
 from app.database import get_db
 from app.models.music import Album, Track, Artist, PlayHistory
+from app.models.settings import AppSettings
 from app.schemas.music import (
     AlbumResponse, TrackResponse, ArtistResponse, 
     PlayHistoryResponse, TrendingResponse
 )
 from app.services.music import MusicService
 from app.services.qobuz import QobuzService
+from app.services.streamrip import StreamripService
 
 router = APIRouter(prefix="/music", tags=["Music"])
 
@@ -568,3 +570,126 @@ async def stream_track(
         filename=os.path.basename(file_path),
         headers={"Accept-Ranges": "bytes"}
     )
+
+
+@router.get("/direct-download-enabled")
+async def check_direct_download_enabled(db: AsyncSession = Depends(get_db)):
+    """Check if direct download feature is enabled"""
+    result = await db.execute(
+        select(AppSettings).where(AppSettings.key == "direct_download_enabled")
+    )
+    setting = result.scalar_one_or_none()
+    return {"enabled": setting.value == "true" if setting else False}
+
+
+@router.post("/direct-download")
+async def direct_download_album(
+    qobuz_url: str,
+    quality: int = 1,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Download an album directly to the user's device.
+    Quality: 1=MP3 320, 2=16/44.1, 3=24/96, 4=24/192
+    Returns a zip file for download.
+    """
+    import tempfile
+    import zipfile
+    import shutil
+    import asyncio
+    
+    # Check if feature is enabled
+    result = await db.execute(
+        select(AppSettings).where(AppSettings.key == "direct_download_enabled")
+    )
+    setting = result.scalar_one_or_none()
+    if not setting or setting.value != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Direct download feature is not enabled"
+        )
+    
+    # Validate quality
+    if quality not in [1, 2, 3, 4]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid quality. Use 1=MP3, 2=CD, 3=Hi-Res, 4=Hi-Res+"
+        )
+    
+    # Create temp directory for download
+    temp_dir = tempfile.mkdtemp(prefix="auvia_direct_")
+    
+    try:
+        # Use streamrip to download with specified quality
+        streamrip_service = StreamripService()
+        success = await streamrip_service.download_to_path(
+            qobuz_url, 
+            temp_dir, 
+            quality=quality
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Download failed"
+            )
+        
+        # Find downloaded files
+        downloaded_files = []
+        for root, dirs, files in os.walk(temp_dir):
+            for file in files:
+                if file.endswith(('.mp3', '.flac', '.jpg', '.png', '.pdf')):
+                    downloaded_files.append(os.path.join(root, file))
+        
+        if not downloaded_files:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="No files downloaded"
+            )
+        
+        # Create zip file
+        zip_path = os.path.join(temp_dir, "album.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file_path in downloaded_files:
+                arcname = os.path.relpath(file_path, temp_dir)
+                zipf.write(file_path, arcname)
+        
+        # Get album name from folder structure for filename
+        album_name = "album"
+        for item in os.listdir(temp_dir):
+            item_path = os.path.join(temp_dir, item)
+            if os.path.isdir(item_path) and item != "__pycache__":
+                album_name = item
+                break
+        
+        # Stream the zip file
+        async def stream_and_cleanup():
+            try:
+                async with aiofiles.open(zip_path, 'rb') as f:
+                    while chunk := await f.read(8192):
+                        yield chunk
+            finally:
+                # Cleanup temp directory after streaming
+                await asyncio.sleep(1)  # Brief delay to ensure file is fully sent
+                shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        # Sanitize filename
+        safe_name = "".join(c for c in album_name if c.isalnum() or c in (' ', '-', '_')).strip()
+        
+        return StreamingResponse(
+            stream_and_cleanup(),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_name}.zip"'
+            }
+        )
+        
+    except HTTPException:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+    except Exception as e:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Download failed: {str(e)}"
+        )

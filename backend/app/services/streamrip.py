@@ -230,3 +230,73 @@ class StreamripService:
         except:
             pass
         return None
+    
+    async def download_to_path(self, url: str, output_path: str, quality: int = 1) -> bool:
+        """
+        Download an album to a specific path with specified quality.
+        Used for direct downloads to user's device.
+        
+        Quality: 1=MP3 320, 2=16/44.1, 3=24/96, 4=24/192
+        """
+        try:
+            # Ensure output directory exists
+            os.makedirs(output_path, exist_ok=True)
+            
+            # Save current config
+            original_config = None
+            if self.config_path.exists():
+                original_config = toml.load(self.config_path)
+            
+            # Update config with download path and quality
+            config = original_config.copy() if original_config else self._get_default_config()
+            
+            if "downloads" not in config:
+                config["downloads"] = {}
+            config["downloads"]["folder"] = output_path
+            
+            if "qobuz" not in config:
+                config["qobuz"] = {}
+            config["qobuz"]["quality"] = quality
+            
+            # Write temporary config
+            with open(self.config_path, "w") as f:
+                toml.dump(config, f)
+            
+            # Build streamrip command
+            cmd = ["rip", "-ndb", "url", url]
+            
+            print(f"Direct download: {' '.join(cmd)} (quality={quality})")
+            
+            # Execute streamrip
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            
+            stdout_text = stdout.decode() if stdout else ""
+            stderr_text = stderr.decode() if stderr else ""
+            
+            print(f"Streamrip stdout: {stdout_text[:500]}")
+            if stderr_text:
+                print(f"Streamrip stderr: {stderr_text[:500]}")
+            
+            # Restore original config
+            if original_config:
+                with open(self.config_path, "w") as f:
+                    toml.dump(original_config, f)
+            
+            return process.returncode == 0
+            
+        except Exception as e:
+            print(f"Direct download error: {e}")
+            # Try to restore original config
+            if original_config:
+                try:
+                    with open(self.config_path, "w") as f:
+                        toml.dump(original_config, f)
+                except:
+                    pass
+            return False

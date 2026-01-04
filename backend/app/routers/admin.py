@@ -7,7 +7,7 @@ import os
 from app.database import get_db
 from app.models.user import User
 from app.models.music import Album, Track, Artist
-from app.models.settings import QobuzConfig, StorageLocation
+from app.models.settings import QobuzConfig, StorageLocation, AppSettings
 from app.schemas.settings import (
     QobuzConfigCreate, QobuzConfigResponse, 
     StorageLocationCreate, StorageLocationResponse,
@@ -294,6 +294,46 @@ async def get_quality_options():
         {"value": k, "label": v}
         for k, v in QUALITY_LABELS.items()
     ]
+
+
+@router.get("/settings/direct-download")
+async def get_direct_download_setting(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Get direct download setting"""
+    result = await db.execute(
+        select(AppSettings).where(AppSettings.key == "direct_download_enabled")
+    )
+    setting = result.scalar_one_or_none()
+    return {"enabled": setting.value == "true" if setting else False}
+
+
+@router.post("/settings/direct-download")
+async def set_direct_download_setting(
+    enabled: bool,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Enable/disable direct download feature"""
+    result = await db.execute(
+        select(AppSettings).where(AppSettings.key == "direct_download_enabled")
+    )
+    setting = result.scalar_one_or_none()
+    
+    if setting:
+        setting.value = "true" if enabled else "false"
+    else:
+        setting = AppSettings(
+            key="direct_download_enabled",
+            value="true" if enabled else "false",
+            value_type="bool",
+            description="Allow users to download albums directly to their device"
+        )
+        db.add(setting)
+    
+    await db.commit()
+    return {"enabled": enabled}
 
 
 def format_bytes(size: int) -> str:

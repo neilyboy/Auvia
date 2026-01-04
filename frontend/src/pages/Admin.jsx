@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { 
   Settings, Lock, HardDrive, Music, 
   ChevronRight, Check, Save, Eye, EyeOff,
-  Plus, Trash2, RefreshCw
+  Plus, Trash2, RefreshCw, Download
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import api from '../services/api'
@@ -85,6 +85,7 @@ export default function Admin() {
         {[
           { id: 'qobuz', label: 'Qobuz', icon: Music },
           { id: 'storage', label: 'Storage', icon: HardDrive },
+          { id: 'features', label: 'Features', icon: Settings },
           { id: 'account', label: 'Account', icon: Lock },
         ].map(tab => {
           const Icon = tab.icon
@@ -108,6 +109,7 @@ export default function Admin() {
       {/* Content */}
       {activeSection === 'qobuz' && <QobuzSettings />}
       {activeSection === 'storage' && <StorageSettings />}
+      {activeSection === 'features' && <FeatureSettings />}
       {activeSection === 'account' && <AccountSettings />}
     </div>
   )
@@ -526,6 +528,88 @@ function AccountSettings() {
           {saving ? 'Saving...' : 'Change PIN'}
         </button>
       </form>
+    </div>
+  )
+}
+
+function FeatureSettings() {
+  const [directDownloadEnabled, setDirectDownloadEnabled] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetchSettings()
+  }, [])
+
+  const fetchSettings = async () => {
+    try {
+      const response = await api.get('/admin/settings/direct-download')
+      setDirectDownloadEnabled(response.data.enabled)
+    } catch (error) {
+      console.error('Failed to fetch settings:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleToggle = async () => {
+    setSaving(true)
+    try {
+      const newValue = !directDownloadEnabled
+      await api.post('/admin/settings/direct-download', null, {
+        params: { enabled: newValue }
+      })
+      setDirectDownloadEnabled(newValue)
+      toast.success(newValue ? 'Direct downloads enabled' : 'Direct downloads disabled')
+    } catch (error) {
+      toast.error('Failed to update setting')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-auvia-card rounded-2xl p-6">
+        <div className="animate-pulse">
+          <div className="h-6 bg-auvia-border rounded w-1/3 mb-4" />
+          <div className="h-12 bg-auvia-border rounded" />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-auvia-card rounded-2xl p-6">
+      <h2 className="text-lg font-semibold text-white mb-4">Feature Settings</h2>
+      
+      <div className="space-y-4">
+        {/* Direct Download Toggle */}
+        <div className="flex items-center justify-between p-4 bg-auvia-dark rounded-xl">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <Download size={18} className="text-green-500" />
+              <span className="text-white font-medium">Direct Downloads</span>
+            </div>
+            <p className="text-auvia-muted text-sm mt-1">
+              Allow users to download albums directly to their device with quality selection
+            </p>
+          </div>
+          <button
+            onClick={handleToggle}
+            disabled={saving}
+            className={`relative w-14 h-8 rounded-full transition-colors ${
+              directDownloadEnabled ? 'bg-green-500' : 'bg-auvia-border'
+            } ${saving ? 'opacity-50' : ''}`}
+          >
+            <div
+              className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
+                directDownloadEnabled ? 'translate-x-7' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
