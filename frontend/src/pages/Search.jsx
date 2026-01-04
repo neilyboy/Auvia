@@ -256,6 +256,8 @@ export default function Search() {
               await api.post('/queue/add', {
                 qobuz_track_id: track.qobuz_id,
                 qobuz_album_url: track.qobuz_album_url,
+                track_title: track.title,
+                track_number: track.track_number,
                 play_now: true
               })
               // Navigate to album page to see download progress
@@ -284,6 +286,8 @@ export default function Search() {
               await api.post('/queue/add', {
                 qobuz_track_id: track.qobuz_id,
                 qobuz_album_url: track.qobuz_album_url,
+                track_title: track.title,
+                track_number: track.track_number,
                 play_now: false
               })
               // Banner shows download status
@@ -311,6 +315,8 @@ export default function Search() {
               await api.post('/queue/add', {
                 qobuz_track_id: track.qobuz_id,
                 qobuz_album_url: track.qobuz_album_url,
+                track_title: track.title,
+                track_number: track.track_number,
                 play_next: true
               })
               // Banner shows download status

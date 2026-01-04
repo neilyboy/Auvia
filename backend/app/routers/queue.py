@@ -86,10 +86,12 @@ async def add_to_queue(
     # If we need to download first (track not in DB yet)
     elif request.qobuz_album_url:
         # Start download and add to queue when ready
-        print(f"Starting download with track_id: {request.qobuz_track_id}, play_now: {request.play_now}")
+        print(f"Starting download with track_id: {request.qobuz_track_id}, title: {request.track_title}, number: {request.track_number}, play_now: {request.play_now}")
         task = await download_service.start_download(
             request.qobuz_album_url,
             track_id=request.qobuz_track_id,
+            track_title=request.track_title,
+            track_number=request.track_number,
             play_now=request.play_now,
             play_next=request.play_next
         )

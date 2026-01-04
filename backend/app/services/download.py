@@ -24,6 +24,8 @@ class DownloadService:
         album_title: str = None,
         artist_name: str = None,
         track_id: str = None,
+        track_title: str = None,
+        track_number: int = None,
         play_now: bool = False,
         play_next: bool = False
     ) -> DownloadTask:
@@ -52,11 +54,11 @@ class DownloadService:
         await self.db.refresh(task)
         
         # Start download in background
-        asyncio.create_task(self._execute_download(task.id, track_id, play_now, play_next))
+        asyncio.create_task(self._execute_download(task.id, track_id, track_title, track_number, play_now, play_next))
         
         return task
     
-    async def _execute_download(self, task_id: int, play_track_id: str = None, play_now: bool = False, play_next: bool = False):
+    async def _execute_download(self, task_id: int, play_track_id: str = None, play_track_title: str = None, play_track_number: int = None, play_now: bool = False, play_next: bool = False):
         """Execute the download in background"""
         from app.database import async_session_maker
         from sqlalchemy.orm import selectinload
@@ -127,7 +129,7 @@ class DownloadService:
                     # Queue tracks if requested
                     if play_now or play_next:
                         await self._queue_downloaded_tracks(
-                            db, task.qobuz_url, play_track_id, play_now, play_next
+                            db, task.qobuz_url, play_track_id, play_track_title, play_track_number, play_now, play_next
                         )
                 else:
                     task.status = "failed"
@@ -145,6 +147,8 @@ class DownloadService:
         db: AsyncSession,
         qobuz_url: str,
         play_track_id: str = None,
+        play_track_title: str = None,
+        play_track_number: int = None,
         play_now: bool = False,
         play_next: bool = False
     ):
@@ -180,24 +184,35 @@ class DownloadService:
             # Sort tracks by disc and track number
             tracks = sorted(album.tracks, key=lambda t: (t.disc_number or 1, t.track_number or 0))
             
-            # If play_track_id specified, find that specific track
-            if play_track_id:
-                print(f"Looking for specific track with qobuz_id: {play_track_id}")
-                target_track = next((t for t in tracks if t.qobuz_id == play_track_id), None)
+            # If a specific track was requested, find it
+            target_track = None
+            if play_track_id or play_track_title or play_track_number:
+                print(f"Looking for specific track - qobuz_id: {play_track_id}, title: {play_track_title}, number: {play_track_number}")
                 
-                # If not found by qobuz_id, try to match by track number from qobuz_id
-                # Qobuz track IDs are often just the track number on the album
-                if not target_track and play_track_id.isdigit():
-                    track_num = int(play_track_id)
-                    target_track = next((t for t in tracks if t.track_number == track_num), None)
+                # Try to match by qobuz_id first
+                if play_track_id:
+                    target_track = next((t for t in tracks if t.qobuz_id == play_track_id), None)
+                
+                # Try to match by track number
+                if not target_track and play_track_number:
+                    target_track = next((t for t in tracks if t.track_number == play_track_number), None)
                     if target_track:
-                        print(f"Found track by track number: {target_track.title}")
+                        print(f"Found track by track number {play_track_number}: {target_track.title}")
+                
+                # Try to match by title (case-insensitive, partial match)
+                if not target_track and play_track_title:
+                    normalized_title = play_track_title.lower().strip()
+                    for t in tracks:
+                        if t.title and normalized_title in t.title.lower():
+                            target_track = t
+                            print(f"Found track by title match: {target_track.title}")
+                            break
                 
                 if target_track:
                     print(f"Queueing only specific track: {target_track.title}")
                     tracks = [target_track]  # Only queue the specific track
                 else:
-                    print(f"Could not find track {play_track_id}, queueing all {len(tracks)} tracks")
+                    print(f"Could not find specific track, queueing all {len(tracks)} tracks")
             
             if play_now:
                 # Clear existing queue and add new tracks

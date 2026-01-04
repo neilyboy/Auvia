@@ -111,6 +111,8 @@ class AddToQueueRequest(BaseModel):
     track_id: Optional[int] = None
     qobuz_track_id: Optional[str] = None
     qobuz_album_url: Optional[str] = None
+    track_title: Optional[str] = None  # For matching after download
+    track_number: Optional[int] = None  # For matching after download
     play_next: bool = False
     play_now: bool = False
 
