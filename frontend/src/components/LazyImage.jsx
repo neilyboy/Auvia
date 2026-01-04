@@ -54,7 +54,8 @@ export default function LazyImage({
     setIsLoaded(true)
   }
 
-  const handleError = () => {
+  const handleError = (e) => {
+    console.error('LazyImage load error:', src, e.target?.src)
     setHasError(true)
     setIsLoaded(true)
   }
