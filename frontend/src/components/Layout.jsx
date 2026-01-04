@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { Home, Search, Library, ListMusic, Settings, Heart } from 'lucide-react'
 import Player from './Player'
+import DownloadBanner from './DownloadBanner'
 import { usePlayerStore } from '../stores/playerStore'
 
 const navItems = [
@@ -17,6 +18,9 @@ export default function Layout({ children }) {
   
   return (
     <div className="h-full flex flex-col bg-auvia-dark">
+      {/* Download Progress Banner */}
+      <DownloadBanner />
+      
       {/* Main Content */}
       <main className={`flex-1 overflow-y-auto scroll-smooth ${currentTrack ? 'pb-32 md:pb-24' : 'pb-20'}`}>
         {children}

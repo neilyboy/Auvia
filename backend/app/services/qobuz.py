@@ -394,8 +394,12 @@ class QobuzService:
                     album_title = album.get("title")
                     qobuz_album_id = str(album.get("id", "")) if album.get("id") else None
                     album_slug = album.get("slug", "")
-                    if qobuz_album_id and album_slug:
-                        qobuz_album_url = f"https://www.qobuz.com/us-en/album/{album_slug}/{qobuz_album_id}"
+                    if qobuz_album_id:
+                        # Use slug if available, otherwise use placeholder
+                        if album_slug:
+                            qobuz_album_url = f"https://www.qobuz.com/us-en/album/{album_slug}/{qobuz_album_id}"
+                        else:
+                            qobuz_album_url = f"https://www.qobuz.com/us-en/album/-/{qobuz_album_id}"
                     
                     album_image = album.get("image", {})
                     if isinstance(album_image, dict):

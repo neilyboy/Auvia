@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 import os

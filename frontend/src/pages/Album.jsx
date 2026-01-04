@@ -6,6 +6,7 @@ import PlayActionModal from '../components/PlayActionModal'
 import DownloadQualityModal from '../components/DownloadQualityModal'
 import api, { API_URL } from '../services/api'
 import { usePlayerStore } from '../stores/playerStore'
+import { useDownloadStore } from '../stores/downloadStore'
 import toast from 'react-hot-toast'
 
 export default function Album() {
@@ -16,6 +17,7 @@ export default function Album() {
   const [downloading, setDownloading] = useState(false)
   const [playAfterDownload, setPlayAfterDownload] = useState(false)
   const { setQueue, addToQueue, addTracksToQueue, addTracksToQueueNext, currentTrack } = usePlayerStore()
+  const { addDownload, removeDownload } = useDownloadStore()
   const [playActionModal, setPlayActionModal] = useState({ open: false, tracks: null })
   const [directDownloadEnabled, setDirectDownloadEnabled] = useState(false)
   const [downloadQualityModal, setDownloadQualityModal] = useState(false)
@@ -123,6 +125,7 @@ export default function Album() {
             const downloadedAlbum = response.data.album
             setAlbum(downloadedAlbum)
             setDownloading(false)
+            removeDownload(album.qobuz_id || id)
             
             // Handle pending track action (single track download and play/queue)
             if (pendingTrack && pendingAction) {
@@ -166,7 +169,7 @@ export default function Album() {
     return () => {
       if (pollInterval) clearInterval(pollInterval)
     }
-  }, [downloading, album?.qobuz_id, playAfterDownload, pendingTrack, pendingAction, navigate, setQueue, addToQueue])
+  }, [downloading, album?.qobuz_id, playAfterDownload, pendingTrack, pendingAction, navigate, setQueue, addToQueue, removeDownload, id])
 
   const fetchAlbum = async () => {
     setLoading(true)
@@ -247,32 +250,16 @@ export default function Album() {
   const handleDownload = async () => {
     if (!album?.qobuz_url || downloading) return
     
+    const downloadId = album.qobuz_id || id
     setDownloading(true)
+    addDownload(downloadId, null, album.title)
     toast.loading('Starting download...', { id: 'download' })
-    
-    // Rotate progress messages to show activity
-    const progressMessages = [
-      'Connecting to Qobuz...',
-      'Downloading tracks...',
-      'This may take a few minutes...',
-      'Still downloading...',
-      'Processing audio files...',
-      'Almost there...',
-    ]
-    let msgIndex = 0
-    const progressInterval = setInterval(() => {
-      msgIndex = (msgIndex + 1) % progressMessages.length
-      toast.loading(progressMessages[msgIndex], { id: 'download' })
-    }, 5000)
     
     try {
       await api.post('/queue/play-album', { qobuz_album_url: album.qobuz_url })
-      // Don't dismiss toast - polling will update it when complete
-      // But clear the interval - polling will show its own messages
-      clearInterval(progressInterval)
-      toast.loading('Download in progress - checking status...', { id: 'download' })
+      toast.dismiss('download')
     } catch (error) {
-      clearInterval(progressInterval)
+      removeDownload(downloadId)
       toast.error('Failed to download album', { id: 'download' })
       setDownloading(false)
       setPlayAfterDownload(false)
@@ -311,39 +298,24 @@ export default function Album() {
       return
     }
 
+    const downloadId = album.qobuz_id || id
+    
     // Store the pending track and action
     setPendingTrack(track)
     setPendingAction(action)
     setDownloading(true)
-
-    toast.loading(`Downloading "${track.title}"...`, { id: 'track-download' })
-    
-    // Rotate progress messages
-    const progressMessages = [
-      `Downloading "${track.title}"...`,
-      'Fetching from Qobuz...',
-      'This may take a moment...',
-      'Processing audio...',
-    ]
-    let msgIndex = 0
-    const progressInterval = setInterval(() => {
-      msgIndex = (msgIndex + 1) % progressMessages.length
-      toast.loading(progressMessages[msgIndex], { id: 'track-download' })
-    }, 4000)
+    addDownload(downloadId, track.title, album.title)
 
     try {
       // Start the album download via queue endpoint
       await api.post('/queue/play-album', {
         qobuz_album_url: album.qobuz_url
       })
-      
-      clearInterval(progressInterval)
-      toast.loading(`Downloading - will ${action} "${track.title}" when ready...`, { id: 'track-download' })
-      
+      // Banner will show progress, toast dismissed
     } catch (error) {
-      clearInterval(progressInterval)
+      removeDownload(downloadId)
       console.error('Download failed:', error)
-      toast.error('Failed to start download', { id: 'track-download' })
+      toast.error('Failed to start download')
       setDownloading(false)
       setPendingTrack(null)
       setPendingAction(null)
