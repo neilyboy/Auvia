@@ -50,6 +50,30 @@ const updateMediaSession = (track, isPlaying, actions) => {
   }
 }
 
+// Clear Media Session (for iOS cleanup)
+const clearMediaSession = () => {
+  if (!('mediaSession' in navigator)) return
+  
+  try {
+    // Set playback state to none
+    navigator.mediaSession.playbackState = 'none'
+    
+    // Clear metadata
+    navigator.mediaSession.metadata = null
+    
+    // Remove action handlers
+    navigator.mediaSession.setActionHandler('play', null)
+    navigator.mediaSession.setActionHandler('pause', null)
+    navigator.mediaSession.setActionHandler('previoustrack', null)
+    navigator.mediaSession.setActionHandler('nexttrack', null)
+    navigator.mediaSession.setActionHandler('seekto', null)
+    navigator.mediaSession.setActionHandler('seekbackward', null)
+    navigator.mediaSession.setActionHandler('seekforward', null)
+  } catch (e) {
+    console.log('Clear Media Session error:', e)
+  }
+}
+
 export const usePlayerStore = create((set, get) => ({
   // Current track
   currentTrack: null,
@@ -288,6 +312,8 @@ export const usePlayerStore = create((set, get) => ({
       sound.stop()
       sound.unload()
     }
+    // Clear Media Session for iOS
+    clearMediaSession()
     set({ queue: [], queueIndex: 0, currentTrack: null, sound: null, isPlaying: false })
   },
 

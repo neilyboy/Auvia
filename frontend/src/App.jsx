@@ -15,12 +15,44 @@ import Setup from './pages/Setup'
 function App() {
   const { checkSetupStatus, setupStatus, loading } = useAuthStore()
   const initMediaSession = usePlayerStore((state) => state.initMediaSession)
+  const clearQueue = usePlayerStore((state) => state.clearQueue)
 
   useEffect(() => {
     checkSetupStatus()
     // Initialize Media Session API for Bluetooth/hardware button support
     initMediaSession()
-  }, [checkSetupStatus, initMediaSession])
+    
+    // Cleanup Media Session on page close/hide for iOS
+    const handleBeforeUnload = () => {
+      clearQueue()
+    }
+    
+    const handleVisibilityChange = () => {
+      // On iOS, clear when page becomes hidden to prevent zombie players
+      if (document.visibilityState === 'hidden') {
+        // Only clear if no audio is actually playing
+        const sound = usePlayerStore.getState().sound
+        if (!sound || !sound.playing()) {
+          // Clear the media session metadata when page is hidden and not playing
+          if ('mediaSession' in navigator) {
+            try {
+              navigator.mediaSession.playbackState = 'none'
+            } catch (e) {
+              // Ignore errors
+            }
+          }
+        }
+      }
+    }
+    
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [checkSetupStatus, initMediaSession, clearQueue])
 
   if (loading) {
     return (
