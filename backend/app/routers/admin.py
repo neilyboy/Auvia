@@ -15,6 +15,7 @@ from app.schemas.settings import (
 )
 from app.services.auth import get_current_admin_user
 from app.services.streamrip import StreamripService
+from app.services.cache import cache_clear_pattern
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -360,3 +361,16 @@ def format_bytes(size: int) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} PB"
+
+
+@router.post("/clear-cache")
+async def clear_cache(
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Clear all search and Qobuz caches"""
+    search_cleared = await cache_clear_pattern("search_qobuz:*")
+    qobuz_cleared = await cache_clear_pattern("qobuz:*")
+    trending_cleared = await cache_clear_pattern("trending:*")
+    
+    total = search_cleared + qobuz_cleared + trending_cleared
+    return {"message": f"Cleared {total} cached items", "count": total}

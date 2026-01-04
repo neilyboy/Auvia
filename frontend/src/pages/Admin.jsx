@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { 
   Settings, Lock, HardDrive, Music, 
   ChevronRight, Check, Save, Eye, EyeOff,
-  Plus, Trash2, RefreshCw, Download
+  Plus, Trash2, RefreshCw, Download, Database
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import api from '../services/api'
@@ -544,6 +544,7 @@ function FeatureSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [clearingCache, setClearingCache] = useState(false)
 
   useEffect(() => {
     fetchSettings()
@@ -586,6 +587,18 @@ function FeatureSettings() {
       toast.error('Failed to scan library')
     } finally {
       setScanning(false)
+    }
+  }
+
+  const handleClearCache = async () => {
+    setClearingCache(true)
+    try {
+      const response = await api.post('/admin/clear-cache')
+      toast.success(response.data.message)
+    } catch (error) {
+      toast.error('Failed to clear cache')
+    } finally {
+      setClearingCache(false)
     }
   }
 
@@ -651,6 +664,29 @@ function FeatureSettings() {
           >
             <RefreshCw size={16} className={scanning ? 'animate-spin' : ''} />
             {scanning ? 'Scanning...' : 'Scan'}
+          </button>
+        </div>
+
+        {/* Clear Cache */}
+        <div className="flex items-center justify-between p-4 bg-auvia-dark rounded-xl">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <Database size={18} className="text-orange-400" />
+              <span className="text-white font-medium">Clear Cache</span>
+            </div>
+            <p className="text-auvia-muted text-sm mt-1">
+              Clear cached search results and remote album data to fix stale images
+            </p>
+          </div>
+          <button
+            onClick={handleClearCache}
+            disabled={clearingCache}
+            className={`px-4 py-2 bg-orange-500 rounded-lg text-white font-medium flex items-center gap-2 touch-feedback ${
+              clearingCache ? 'opacity-50' : ''
+            }`}
+          >
+            <Trash2 size={16} />
+            {clearingCache ? 'Clearing...' : 'Clear'}
           </button>
         </div>
       </div>
