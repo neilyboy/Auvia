@@ -291,9 +291,9 @@ export default function Album() {
     toast.loading(`Downloading "${track.title}"...`, { id: 'track-download' })
 
     try {
-      // Start the album download
-      await api.post('/music/download', {
-        qobuz_url: album.qobuz_url
+      // Start the album download via queue endpoint
+      await api.post('/queue/play-album', {
+        qobuz_album_url: album.qobuz_url
       })
       
       // Update toast to show we're waiting for download
