@@ -41,9 +41,28 @@ export default function Album() {
       return
     }
     
+    const qualityNames = { 1: 'MP3', 2: 'CD Quality', 3: 'Hi-Res', 4: 'Hi-Res+' }
+    const qualityName = qualityNames[quality] || 'audio'
+    
     setDirectDownloading(true)
     setDownloadQualityModal(false)
-    toast.loading('Preparing download...', { id: 'direct-download' })
+    
+    // Show initial toast with quality info
+    toast.loading(`Downloading ${qualityName} from Qobuz...`, { id: 'direct-download' })
+    
+    // Progress message rotation for long downloads
+    const progressMessages = [
+      `Downloading ${qualityName} tracks...`,
+      'Fetching audio files...',
+      'This may take a few minutes for large albums...',
+      `Packaging ${qualityName} files...`,
+      'Almost there, creating ZIP...',
+    ]
+    let messageIndex = 0
+    const progressInterval = setInterval(() => {
+      messageIndex = (messageIndex + 1) % progressMessages.length
+      toast.loading(progressMessages[messageIndex], { id: 'direct-download' })
+    }, 8000) // Rotate message every 8 seconds
     
     try {
       const response = await api.post('/music/direct-download', null, {
@@ -52,6 +71,8 @@ export default function Album() {
         timeout: 600000 // 10 minute timeout for large albums
       })
       
+      clearInterval(progressInterval)
+      
       // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]))
       const link = document.createElement('a')
@@ -59,7 +80,7 @@ export default function Album() {
       
       // Get filename from content-disposition header or use album title
       const contentDisposition = response.headers['content-disposition']
-      let filename = `${album.title}.zip`
+      let filename = `${album.title} [${qualityName}].zip`
       if (contentDisposition) {
         const match = contentDisposition.match(/filename="(.+)"/)
         if (match) filename = match[1]
@@ -71,13 +92,14 @@ export default function Album() {
       link.remove()
       window.URL.revokeObjectURL(url)
       
-      toast.success('Download started!', { id: 'direct-download' })
+      toast.success(`${qualityName} download complete!`, { id: 'direct-download' })
     } catch (error) {
+      clearInterval(progressInterval)
       console.error('Direct download failed:', error)
       if (error.response?.status === 403) {
         toast.error('Direct downloads are disabled', { id: 'direct-download' })
       } else {
-        toast.error('Download failed', { id: 'direct-download' })
+        toast.error('Download failed - please try again', { id: 'direct-download' })
       }
     } finally {
       setDirectDownloading(false)

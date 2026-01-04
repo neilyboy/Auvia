@@ -326,15 +326,22 @@ function StorageSettings() {
   const [newLocation, setNewLocation] = useState({ name: '', path: '', is_primary: false })
 
   useEffect(() => {
-    fetchLocations()
+    // Small delay to ensure component is fully mounted and auth is ready
+    const timer = setTimeout(() => {
+      fetchLocations()
+    }, 100)
+    return () => clearTimeout(timer)
   }, [])
 
   const fetchLocations = async () => {
+    setLoading(true)
     try {
       const response = await api.get('/admin/storage')
-      setLocations(response.data)
+      setLocations(response.data || [])
     } catch (error) {
+      console.error('Storage fetch error:', error)
       toast.error('Failed to load storage locations')
+      setLocations([])
     } finally {
       setLoading(false)
     }

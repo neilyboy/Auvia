@@ -609,12 +609,19 @@ async def direct_download_album(
             detail="Direct download feature is not enabled"
         )
     
-    # Validate quality
-    if quality not in [1, 2, 3, 4]:
+    # Validate quality and get label for filename
+    quality_labels = {
+        1: "MP3",
+        2: "CD",
+        3: "HiRes",
+        4: "HiRes+"
+    }
+    if quality not in quality_labels:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid quality. Use 1=MP3, 2=CD, 3=Hi-Res, 4=Hi-Res+"
         )
+    quality_tag = quality_labels[quality]
     
     # Create temp directory for download
     temp_dir = tempfile.mkdtemp(prefix="auvia_direct_")
@@ -673,14 +680,15 @@ async def direct_download_album(
                 await asyncio.sleep(1)  # Brief delay to ensure file is fully sent
                 shutil.rmtree(temp_dir, ignore_errors=True)
         
-        # Sanitize filename
+        # Sanitize filename and add quality tag
         safe_name = "".join(c for c in album_name if c.isalnum() or c in (' ', '-', '_')).strip()
+        filename_with_quality = f"{safe_name} [{quality_tag}].zip"
         
         return StreamingResponse(
             stream_and_cleanup(),
             media_type="application/zip",
             headers={
-                "Content-Disposition": f'attachment; filename="{safe_name}.zip"'
+                "Content-Disposition": f'attachment; filename="{filename_with_quality}"'
             }
         )
         
