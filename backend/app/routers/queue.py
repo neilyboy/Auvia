@@ -29,25 +29,36 @@ async def get_queue(db: AsyncSession = Depends(get_db)):
     )
     queue_items = result.scalars().all()
     
-    return [
-        QueueItemResponse(
+    responses = []
+    for item in queue_items:
+        # Use local cover art URL if available
+        cover_url = None
+        if item.track.album:
+            if item.track.album.cover_art_local:
+                cover_url = f"/api/music/cover/{item.track.album.id}"
+            elif item.track.album.cover_art_url:
+                cover_url = item.track.album.cover_art_url
+        
+        responses.append(QueueItemResponse(
             id=item.id,
             track=TrackResponse(
                 id=item.track.id,
                 title=item.track.title,
                 artist_name=item.track.artist.name,
-                album_title=item.track.album.title,
+                album_title=item.track.album.title if item.track.album else None,
+                album_id=item.track.album.id if item.track.album else None,
                 duration=item.track.duration,
                 duration_formatted=format_duration(item.track.duration),
                 is_downloaded=item.track.is_downloaded,
-                cover_art_url=item.track.album.cover_art_url
+                cover_art_url=cover_url,
+                file_path=item.track.file_path
             ),
             position=item.position,
             is_playing=item.is_playing,
             added_at=item.added_at
-        )
-        for item in queue_items
-    ]
+        ))
+    
+    return responses
 
 
 @router.post("/add")
