@@ -12,6 +12,12 @@ export default function LazyImage({
   const [hasError, setHasError] = useState(false)
   const imgRef = useRef(null)
 
+  // Reset state when src changes
+  useEffect(() => {
+    setIsLoaded(false)
+    setHasError(false)
+  }, [src])
+
   useEffect(() => {
     const element = imgRef.current
     if (!element) return
@@ -42,7 +48,7 @@ export default function LazyImage({
     observer.observe(element)
 
     return () => observer.disconnect()
-  }, [])
+  }, [src])
 
   const handleLoad = () => {
     setIsLoaded(true)
