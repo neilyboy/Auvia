@@ -22,6 +22,12 @@ class StreamripService:
             # Ensure output directory exists
             os.makedirs(output_path, exist_ok=True)
             
+            # Record directories before download to detect new ones
+            dirs_before = set()
+            for item in Path(output_path).iterdir():
+                if item.is_dir():
+                    dirs_before.add(item.name)
+            
             # Update config with download path before downloading
             await self._set_download_folder(output_path)
             
@@ -43,12 +49,34 @@ class StreamripService:
             stdout_text = stdout.decode() if stdout else ""
             stderr_text = stderr.decode() if stderr else ""
             
-            print(f"Streamrip stdout: {stdout_text[:500]}")
+            print(f"Streamrip stdout: {stdout_text}")
             if stderr_text:
-                print(f"Streamrip stderr: {stderr_text[:500]}")
+                print(f"Streamrip stderr: {stderr_text}")
             
             if process.returncode == 0:
-                return True, output_path
+                # Find newly created directories
+                new_album_dir = None
+                for item in Path(output_path).iterdir():
+                    if item.is_dir() and item.name not in dirs_before:
+                        new_album_dir = str(item)
+                        print(f"Found new album directory: {new_album_dir}")
+                        break
+                
+                # If no new directory, try to find the most recently modified one
+                if not new_album_dir:
+                    latest_dir = None
+                    latest_time = 0
+                    for item in Path(output_path).iterdir():
+                        if item.is_dir():
+                            mtime = item.stat().st_mtime
+                            if mtime > latest_time:
+                                latest_time = mtime
+                                latest_dir = item
+                    if latest_dir:
+                        new_album_dir = str(latest_dir)
+                        print(f"Using most recent directory: {new_album_dir}")
+                
+                return True, new_album_dir or output_path
             else:
                 print(f"Streamrip error (code {process.returncode}): {stderr_text}")
                 return False, None

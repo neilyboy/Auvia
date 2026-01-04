@@ -7,6 +7,7 @@ import TrackItem from '../components/TrackItem'
 import PlayActionModal from '../components/PlayActionModal'
 import api from '../services/api'
 import { usePlayerStore } from '../stores/playerStore'
+import { useDownloadStore } from '../stores/downloadStore'
 import toast from 'react-hot-toast'
 
 export default function Search() {
@@ -16,6 +17,7 @@ export default function Search() {
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
   const { setQueue, addToQueue, addTracksToQueue, addToQueueNext, addTracksToQueueNext, currentTrack } = usePlayerStore()
+  const { addDownload, removeDownload } = useDownloadStore()
   const [playActionModal, setPlayActionModal] = useState({ open: false, type: null, item: null, tracks: null })
 
   const debouncedSearch = useDebouncedCallback(async (searchQuery) => {
@@ -244,19 +246,24 @@ export default function Search() {
           if (playActionModal.type === 'remote_track') {
             // Download and play remote track
             const track = playActionModal.item
-            toast.loading('Downloading...', { id: 'download' })
+            const qobuzId = track.qobuz_album_url.split('/').pop()
+            const downloadId = `download-${qobuzId}`
+            
+            // Show download banner
+            addDownload(downloadId, track.album_title || 'Album')
+            
             try {
               await api.post('/queue/add', {
                 qobuz_track_id: track.qobuz_id,
                 qobuz_album_url: track.qobuz_album_url,
                 play_now: true
               })
-              toast.success('Download started - will play when ready', { id: 'download' })
+              toast.success('Downloading - will play when ready')
               // Navigate to album page to see download progress
-              const qobuzId = track.qobuz_album_url.split('/').pop()
               navigate(`/album/qobuz-${qobuzId}`)
             } catch (error) {
-              toast.error('Failed to start download', { id: 'download' })
+              removeDownload(downloadId)
+              toast.error('Failed to start download')
             }
           } else if (playActionModal.tracks) {
             setQueue(playActionModal.tracks)
@@ -268,16 +275,22 @@ export default function Search() {
         onAddToQueue={async () => {
           if (playActionModal.type === 'remote_track') {
             const track = playActionModal.item
-            toast.loading('Downloading...', { id: 'download' })
+            const qobuzId = track.qobuz_album_url.split('/').pop()
+            const downloadId = `download-${qobuzId}`
+            
+            // Show download banner
+            addDownload(downloadId, track.album_title || 'Album')
+            
             try {
               await api.post('/queue/add', {
                 qobuz_track_id: track.qobuz_id,
                 qobuz_album_url: track.qobuz_album_url,
                 play_now: false
               })
-              toast.success('Download started - will add to queue when ready', { id: 'download' })
+              toast.success('Downloading - will add to queue when ready')
             } catch (error) {
-              toast.error('Failed to start download', { id: 'download' })
+              removeDownload(downloadId)
+              toast.error('Failed to start download')
             }
           } else if (playActionModal.tracks) {
             addTracksToQueue(playActionModal.tracks)
@@ -289,16 +302,22 @@ export default function Search() {
         onPlayNext={async () => {
           if (playActionModal.type === 'remote_track') {
             const track = playActionModal.item
-            toast.loading('Downloading...', { id: 'download' })
+            const qobuzId = track.qobuz_album_url.split('/').pop()
+            const downloadId = `download-${qobuzId}`
+            
+            // Show download banner
+            addDownload(downloadId, track.album_title || 'Album')
+            
             try {
               await api.post('/queue/add', {
                 qobuz_track_id: track.qobuz_id,
                 qobuz_album_url: track.qobuz_album_url,
                 play_next: true
               })
-              toast.success('Download started - will play next when ready', { id: 'download' })
+              toast.success('Downloading - will play next when ready')
             } catch (error) {
-              toast.error('Failed to start download', { id: 'download' })
+              removeDownload(downloadId)
+              toast.error('Failed to start download')
             }
           } else if (playActionModal.tracks) {
             addTracksToQueueNext(playActionModal.tracks)
