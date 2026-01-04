@@ -561,6 +561,10 @@ async def get_album_cover(
                             break
     
     if not cover_path:
+        # Fall back to remote cover URL if available
+        if album.cover_art_url:
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=album.cover_art_url, status_code=302)
         raise HTTPException(status_code=404, detail="Cover art not found")
     
     # If no optimization requested, serve original file
