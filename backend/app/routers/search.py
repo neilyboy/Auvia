@@ -213,7 +213,14 @@ def normalize_title(title: str) -> str:
     return ' '.join(normalized.split())
 
 
-def merge_album_results(local: List[AlbumResponse], remote: List[AlbumResponse]) -> List[AlbumResponse]:
+def get_attr(obj, key, default=None):
+    """Get attribute from object or dict"""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def merge_album_results(local: List[AlbumResponse], remote) -> List[AlbumResponse]:
     """Merge local and remote album results, prioritizing local"""
     seen_qobuz_ids = set()
     seen_title_artist = set()  # For matching by title+artist when no qobuz_id
@@ -222,62 +229,68 @@ def merge_album_results(local: List[AlbumResponse], remote: List[AlbumResponse])
     # Add local results first (they're downloaded)
     for album in local:
         merged.append(album)
-        if album.qobuz_id:
-            seen_qobuz_ids.add(album.qobuz_id)
+        qobuz_id = get_attr(album, 'qobuz_id')
+        if qobuz_id:
+            seen_qobuz_ids.add(qobuz_id)
         # Also track by normalized title+artist for matching
-        key = (normalize_title(album.title), normalize_title(album.artist_name))
+        key = (normalize_title(get_attr(album, 'title', '')), normalize_title(get_attr(album, 'artist_name', '')))
         seen_title_artist.add(key)
     
     # Add remote results that aren't already local
     for album in remote:
+        qobuz_id = get_attr(album, 'qobuz_id')
         # Skip if we have this qobuz_id locally
-        if album.qobuz_id and album.qobuz_id in seen_qobuz_ids:
+        if qobuz_id and qobuz_id in seen_qobuz_ids:
             continue
         
         # Skip if we have an album with same title+artist locally
-        key = (normalize_title(album.title), normalize_title(album.artist_name))
+        key = (normalize_title(get_attr(album, 'title', '')), normalize_title(get_attr(album, 'artist_name', '')))
         if key in seen_title_artist:
             continue
         
         merged.append(album)
-        if album.qobuz_id:
-            seen_qobuz_ids.add(album.qobuz_id)
+        if qobuz_id:
+            seen_qobuz_ids.add(qobuz_id)
         seen_title_artist.add(key)
     
     return merged
 
 
-def merge_track_results(local: List[TrackResponse], remote: List[TrackResponse]) -> List[TrackResponse]:
+def merge_track_results(local: List[TrackResponse], remote) -> List[TrackResponse]:
     """Merge local and remote track results, prioritizing local"""
     seen_qobuz_ids = set()
     merged = []
     
     for track in local:
         merged.append(track)
-        if track.qobuz_id:
-            seen_qobuz_ids.add(track.qobuz_id)
+        qobuz_id = get_attr(track, 'qobuz_id')
+        if qobuz_id:
+            seen_qobuz_ids.add(qobuz_id)
     
     for track in remote:
-        if track.qobuz_id and track.qobuz_id not in seen_qobuz_ids:
+        qobuz_id = get_attr(track, 'qobuz_id')
+        if qobuz_id and qobuz_id not in seen_qobuz_ids:
             merged.append(track)
-            seen_qobuz_ids.add(track.qobuz_id)
+            seen_qobuz_ids.add(qobuz_id)
     
     return merged
 
 
-def merge_artist_results(local: List[ArtistResponse], remote: List[ArtistResponse]) -> List[ArtistResponse]:
+def merge_artist_results(local: List[ArtistResponse], remote) -> List[ArtistResponse]:
     """Merge local and remote artist results, prioritizing local"""
     seen_qobuz_ids = set()
     merged = []
     
     for artist in local:
         merged.append(artist)
-        if artist.qobuz_id:
-            seen_qobuz_ids.add(artist.qobuz_id)
+        qobuz_id = get_attr(artist, 'qobuz_id')
+        if qobuz_id:
+            seen_qobuz_ids.add(qobuz_id)
     
     for artist in remote:
-        if artist.qobuz_id and artist.qobuz_id not in seen_qobuz_ids:
+        qobuz_id = get_attr(artist, 'qobuz_id')
+        if qobuz_id and qobuz_id not in seen_qobuz_ids:
             merged.append(artist)
-            seen_qobuz_ids.add(artist.qobuz_id)
+            seen_qobuz_ids.add(qobuz_id)
     
     return merged
