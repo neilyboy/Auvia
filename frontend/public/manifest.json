@@ -1,0 +1,43 @@
+{
+  "name": "Auvia - Set the Atmosphere",
+  "short_name": "Auvia",
+  "description": "A modern on-demand jukebox for streaming high-quality music",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["music", "entertainment"],
+  "shortcuts": [
+    {
+      "name": "Search",
+      "url": "/search",
+      "description": "Search for music"
+    },
+    {
+      "name": "Library",
+      "url": "/library",
+      "description": "View your music library"
+    },
+    {
+      "name": "Liked Songs",
+      "url": "/liked",
+      "description": "View your liked songs"
+    }
+  ]
+}
