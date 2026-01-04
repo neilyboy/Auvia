@@ -543,6 +543,7 @@ function FeatureSettings() {
   const [directDownloadEnabled, setDirectDownloadEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
     fetchSettings()
@@ -572,6 +573,19 @@ function FeatureSettings() {
       toast.error('Failed to update setting')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleRescan = async () => {
+    setScanning(true)
+    try {
+      const response = await api.post('/music/scan')
+      const { stats } = response.data
+      toast.success(`Scan complete: ${stats.tracks} tracks, ${stats.albums} albums`)
+    } catch (error) {
+      toast.error('Failed to scan library')
+    } finally {
+      setScanning(false)
     }
   }
 
@@ -614,6 +628,29 @@ function FeatureSettings() {
                 directDownloadEnabled ? 'translate-x-7' : 'translate-x-1'
               }`}
             />
+          </button>
+        </div>
+
+        {/* Library Rescan */}
+        <div className="flex items-center justify-between p-4 bg-auvia-dark rounded-xl">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <RefreshCw size={18} className="text-auvia-accent" />
+              <span className="text-white font-medium">Rescan Library</span>
+            </div>
+            <p className="text-auvia-muted text-sm mt-1">
+              Scan all storage locations for new music files and update the database
+            </p>
+          </div>
+          <button
+            onClick={handleRescan}
+            disabled={scanning}
+            className={`px-4 py-2 bg-auvia-accent rounded-lg text-white font-medium flex items-center gap-2 touch-feedback ${
+              scanning ? 'opacity-50' : ''
+            }`}
+          >
+            <RefreshCw size={16} className={scanning ? 'animate-spin' : ''} />
+            {scanning ? 'Scanning...' : 'Scan'}
           </button>
         </div>
       </div>

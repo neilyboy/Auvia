@@ -169,18 +169,35 @@ async def get_storage_locations(
     result = await db.execute(select(StorageLocation))
     locations = result.scalars().all()
     
-    # Update disk space info
+    # Build response manually to avoid async lazy loading issues
+    responses = []
     for location in locations:
+        total_space = None
+        free_space = None
         try:
             usage = shutil.disk_usage(location.path)
-            location.total_space = format_bytes(usage.total)
-            location.free_space = format_bytes(usage.free)
+            total_space = format_bytes(usage.total)
+            free_space = format_bytes(usage.free)
+            # Update in DB
+            location.total_space = total_space
+            location.free_space = free_space
         except:
             pass
+        
+        responses.append(StorageLocationResponse(
+            id=location.id,
+            name=location.name,
+            path=location.path,
+            is_primary=location.is_primary,
+            total_space=total_space or location.total_space,
+            free_space=free_space or location.free_space,
+            created_at=location.created_at,
+            updated_at=location.updated_at
+        ))
     
     await db.commit()
     
-    return [StorageLocationResponse.model_validate(loc) for loc in locations]
+    return responses
 
 
 @router.post("/storage", response_model=StorageLocationResponse)
