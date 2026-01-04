@@ -462,23 +462,44 @@ class QobuzService:
     
     def _parse_album_detail(self, data: Dict) -> AlbumResponse:
         """Parse detailed album response including tracks"""
-        artist_name = data.get("artist", {}).get("name", "Unknown Artist")
+        # Safely get artist name
+        artist_data = data.get("artist")
+        if isinstance(artist_data, dict):
+            artist_name = artist_data.get("name", "Unknown Artist")
+        else:
+            artist_name = "Unknown Artist"
+        
         qobuz_id = str(data.get("id", ""))
         slug = data.get("slug", "")
         
-        image = data.get("image", {})
-        cover_art_url = (
-            image.get("large") or 
-            image.get("small") or 
-            image.get("thumbnail")
-        )
+        # Safely get cover art
+        image = data.get("image")
+        if isinstance(image, dict):
+            cover_art_url = (
+                image.get("large") or 
+                image.get("small") or 
+                image.get("thumbnail")
+            )
+        else:
+            cover_art_url = None
+        
+        # Safely get genre
+        genre_data = data.get("genre")
+        genre = genre_data.get("name") if isinstance(genre_data, dict) else None
         
         # Parse tracks
         tracks = []
-        for item in data.get("tracks", {}).get("items", []):
+        tracks_data = data.get("tracks")
+        track_items = tracks_data.get("items", []) if isinstance(tracks_data, dict) else []
+        
+        for item in track_items:
+            # Safely get performer name
+            performer = item.get("performer")
+            track_artist = performer.get("name", artist_name) if isinstance(performer, dict) else artist_name
+            
             tracks.append(TrackResponse(
                 title=item.get("title", "Unknown Track"),
-                artist_name=item.get("performer", {}).get("name", artist_name),
+                artist_name=track_artist,
                 album_title=data.get("title"),
                 qobuz_id=str(item.get("id", "")),
                 track_number=item.get("track_number"),
@@ -489,14 +510,18 @@ class QobuzService:
                 cover_art_url=cover_art_url
             ))
         
+        # Safely get release date
+        released_at = data.get("released_at")
+        release_date = released_at[:10] if isinstance(released_at, str) and released_at else None
+        
         return AlbumResponse(
             title=data.get("title", "Unknown Album"),
             artist_name=artist_name,
             qobuz_id=qobuz_id,
             qobuz_url=f"https://www.qobuz.com/us-en/album/{slug}/{qobuz_id}" if slug else None,
             cover_art_url=cover_art_url,
-            release_date=data.get("released_at", "")[:10] if data.get("released_at") else None,
-            genre=data.get("genre", {}).get("name"),
+            release_date=release_date,
+            genre=genre,
             total_tracks=data.get("tracks_count"),
             duration=data.get("duration"),
             duration_formatted=self._format_duration(data.get("duration")),
