@@ -457,6 +457,47 @@ export const usePlayerStore = create((set, get) => ({
     return false
   },
 
+  // Refresh queue from backend (call after download completes)
+  refreshQueue: async () => {
+    try {
+      const response = await api.get('/queue')
+      const backendQueue = response.data
+      
+      if (backendQueue && backendQueue.length > 0) {
+        // Convert backend queue items to track format
+        const tracks = backendQueue.map(item => ({
+          id: item.track.id,
+          title: item.track.title,
+          artist_name: item.track.artist_name,
+          album_title: item.track.album_title,
+          album_id: item.track.album_id,
+          duration: item.track.duration,
+          file_path: item.track.file_path,
+          is_downloaded: item.track.is_downloaded,
+          cover_art_url: item.track.cover_art_url
+        }))
+        
+        const { currentTrack, isPlaying } = get()
+        
+        // If nothing is playing, start playing the first track
+        if (!currentTrack || !isPlaying) {
+          console.log('Starting playback from refreshed queue:', tracks.length, 'tracks')
+          get().setQueue(tracks, 0, true)
+        } else {
+          // Just update the queue without interrupting playback
+          set({ queue: tracks })
+          saveQueueToStorage(tracks, get().queueIndex, currentTrack)
+        }
+        
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Failed to refresh queue:', error)
+      return false
+    }
+  },
+
   clearQueue: () => {
     const { sound } = get()
     // Stop progress timer first

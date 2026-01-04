@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { useDownloadStore } from '../stores/downloadStore'
+import { usePlayerStore } from '../stores/playerStore'
 import { Loader2, Download, CheckCircle } from 'lucide-react'
 import api from '../services/api'
 import toast from 'react-hot-toast'
 
 export default function DownloadBanner() {
   const { activeDownloads, removeDownload } = useDownloadStore()
+  const { refreshQueue } = usePlayerStore()
   const pollingRef = useRef(null)
   const completedRef = useRef(new Set())
   
@@ -36,6 +38,10 @@ export default function DownloadBanner() {
             if (task.status === 'completed' && !completedRef.current.has(download.id)) {
               completedRef.current.add(download.id)
               toast.success(`Downloaded: ${download.title || download.albumTitle || 'Album'}`)
+              
+              // Refresh queue from backend - this will load the newly queued tracks
+              await refreshQueue()
+              
               // Small delay before removing to show success
               setTimeout(() => {
                 removeDownload(download.id)
@@ -66,7 +72,7 @@ export default function DownloadBanner() {
         pollingRef.current = null
       }
     }
-  }, [activeDownloads, removeDownload])
+  }, [activeDownloads, removeDownload, refreshQueue])
   
   if (activeDownloads.length === 0) return null
   

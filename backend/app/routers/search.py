@@ -142,22 +142,30 @@ async def search_local_albums(db: AsyncSession, query: str, limit: int = 20) -> 
     )
     albums = result.scalars().all()
     
-    return [
-        AlbumResponse(
+    responses = []
+    for album in albums:
+        # Use local cover art URL if available, fallback to remote
+        cover_url = None
+        if album.cover_art_local:
+            cover_url = f"/api/music/cover/{album.id}"
+        elif album.cover_art_url:
+            cover_url = album.cover_art_url
+        
+        responses.append(AlbumResponse(
             id=album.id,
             title=album.title,
             artist_name=album.artist.name,
             artist_id=album.artist_id,
             qobuz_id=album.qobuz_id,
             qobuz_url=album.qobuz_url,
-            cover_art_url=album.cover_art_url,
+            cover_art_url=cover_url,
             release_date=album.release_date,
             genre=album.genre,
             total_tracks=album.total_tracks,
             is_downloaded=album.is_downloaded
-        )
-        for album in albums
-    ]
+        ))
+    
+    return responses
 
 
 async def search_local_tracks(db: AsyncSession, query: str, limit: int = 20) -> List[TrackResponse]:
@@ -175,20 +183,29 @@ async def search_local_tracks(db: AsyncSession, query: str, limit: int = 20) -> 
     )
     tracks = result.scalars().all()
     
-    return [
-        TrackResponse(
+    responses = []
+    for track in tracks:
+        # Use local cover art URL if available, fallback to remote
+        cover_url = None
+        if track.album and track.album.cover_art_local:
+            cover_url = f"/api/music/cover/{track.album.id}"
+        elif track.album and track.album.cover_art_url:
+            cover_url = track.album.cover_art_url
+        
+        responses.append(TrackResponse(
             id=track.id,
             title=track.title,
             artist_name=track.artist.name,
-            album_title=track.album.title,
+            album_title=track.album.title if track.album else None,
+            album_id=track.album.id if track.album else None,
             qobuz_id=track.qobuz_id,
             track_number=track.track_number,
             duration=track.duration,
             is_downloaded=track.is_downloaded,
-            cover_art_url=track.album.cover_art_url
-        )
-        for track in tracks
-    ]
+            cover_art_url=cover_url
+        ))
+    
+    return responses
 
 
 async def search_local_artists(db: AsyncSession, query: str, limit: int = 20) -> List[ArtistResponse]:
