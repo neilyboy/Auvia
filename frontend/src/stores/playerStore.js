@@ -89,6 +89,9 @@ export const usePlayerStore = create((set, get) => ({
   // Howler instance
   sound: null,
   
+  // Animation frame ID for progress timer cleanup
+  progressTimerId: null,
+  
   // Loading states
   isLoading: false,
   isDownloading: false,
@@ -104,6 +107,9 @@ export const usePlayerStore = create((set, get) => ({
 
   loadTrack: async (track, autoPlay = true) => {
     const { sound } = get()
+    
+    // Stop progress timer first to prevent memory leak
+    get().stopProgressTimer()
     
     // Stop and unload current sound
     if (sound) {
@@ -177,9 +183,11 @@ export const usePlayerStore = create((set, get) => ({
       },
       onstop: () => {
         set({ isPlaying: false, currentTime: 0 })
+        get().stopProgressTimer()
       },
       onend: () => {
         console.log('Track ended:', track.title)
+        get().stopProgressTimer()
         get().playNext()
       },
       onloaderror: (id, error) => {
@@ -212,6 +220,8 @@ export const usePlayerStore = create((set, get) => ({
     if (sound) {
       sound.pause()
     }
+    // Stop the progress timer to prevent memory leak
+    get().stopProgressTimer()
   },
 
   toggle: () => {
@@ -231,7 +241,18 @@ export const usePlayerStore = create((set, get) => ({
     }
   },
 
+  stopProgressTimer: () => {
+    const { progressTimerId } = get()
+    if (progressTimerId) {
+      cancelAnimationFrame(progressTimerId)
+      set({ progressTimerId: null })
+    }
+  },
+
   startProgressTimer: () => {
+    // Cancel any existing timer first to prevent duplicates
+    get().stopProgressTimer()
+    
     const { sound } = get()
     if (!sound) return
     
@@ -254,10 +275,18 @@ export const usePlayerStore = create((set, get) => ({
           }
         }
         
-        requestAnimationFrame(update)
+        // Store the frame ID so we can cancel it later
+        const frameId = requestAnimationFrame(update)
+        set({ progressTimerId: frameId })
+      } else {
+        // Not playing anymore, clear the timer ID
+        set({ progressTimerId: null })
       }
     }
-    requestAnimationFrame(update)
+    
+    // Start the first frame
+    const frameId = requestAnimationFrame(update)
+    set({ progressTimerId: frameId })
   },
 
   // Queue management
@@ -308,13 +337,15 @@ export const usePlayerStore = create((set, get) => ({
 
   clearQueue: () => {
     const { sound } = get()
+    // Stop progress timer first
+    get().stopProgressTimer()
     if (sound) {
       sound.stop()
       sound.unload()
     }
     // Clear Media Session for iOS
     clearMediaSession()
-    set({ queue: [], queueIndex: 0, currentTrack: null, sound: null, isPlaying: false })
+    set({ queue: [], queueIndex: 0, currentTrack: null, sound: null, isPlaying: false, progressTimerId: null })
   },
 
   playNext: async () => {
