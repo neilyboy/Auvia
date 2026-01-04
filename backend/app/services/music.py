@@ -81,6 +81,10 @@ class MusicService:
     
     async def get_or_create_artist(self, name: str, qobuz_id: str = None) -> Artist:
         """Get existing artist or create new one"""
+        # Validate name - must not be None or empty
+        if not name or (isinstance(name, str) and not name.strip()):
+            name = "Unknown Artist"
+        
         if qobuz_id:
             result = await self.db.execute(
                 select(Artist).where(Artist.qobuz_id == qobuz_id)
@@ -114,6 +118,10 @@ class MusicService:
         genre: str = None
     ) -> Album:
         """Get existing album or create new one"""
+        # Validate title - must not be None or empty
+        if not title or (isinstance(title, str) and not title.strip()):
+            title = "Unknown Album"
+        
         if qobuz_id:
             result = await self.db.execute(
                 select(Album).where(Album.qobuz_id == qobuz_id)
@@ -159,6 +167,11 @@ class MusicService:
         duration: int = None
     ) -> Track:
         """Add a track to the database"""
+        # Validate title - must not be None or empty
+        if not title or (isinstance(title, str) and not title.strip()):
+            # Extract from filename as fallback
+            title = os.path.splitext(os.path.basename(file_path))[0] if file_path else "Unknown Track"
+        
         # Check if track already exists by qobuz_id
         if qobuz_id:
             result = await self.db.execute(
@@ -256,20 +269,34 @@ class MusicService:
                 try:
                     metadata = self._extract_metadata(file_path)
                     
+                    # If metadata extraction failed, try to parse from filename/folder
                     if not metadata:
+                        metadata = self._extract_metadata_from_path(file_path, filename, root)
+                    
+                    if not metadata:
+                        print(f"Could not extract any metadata from {file_path}")
+                        stats["errors"] += 1
                         continue
                     
-                    # Ensure artist name is valid
+                    # Ensure all required fields have valid values (not None or empty)
                     artist_name = metadata.get("artist")
-                    if not artist_name or artist_name.strip() == "":
+                    if not artist_name or (isinstance(artist_name, str) and not artist_name.strip()):
                         artist_name = "Unknown Artist"
+                    
+                    album_title = metadata.get("album")
+                    if not album_title or (isinstance(album_title, str) and not album_title.strip()):
+                        album_title = self._extract_album_from_path(root) or "Unknown Album"
+                    
+                    track_title = metadata.get("title")
+                    if not track_title or (isinstance(track_title, str) and not track_title.strip()):
+                        track_title = self._clean_filename_for_title(filename)
                     
                     # Get or create artist
                     artist = await self.get_or_create_artist(artist_name)
                     
                     # Get or create album
                     album = await self.get_or_create_album(
-                        title=metadata.get("album", "Unknown Album"),
+                        title=album_title,
                         artist=artist,
                         genre=metadata.get("genre")
                     )
@@ -289,12 +316,12 @@ class MusicService:
                     
                     # Add track
                     await self.add_track(
-                        title=metadata.get("title", filename),
+                        title=track_title,
                         artist=artist,
                         album=album,
                         file_path=file_path,
                         track_number=metadata.get("tracknumber"),
-                        disc_number=metadata.get("discnumber", 1),
+                        disc_number=metadata.get("discnumber") or 1,
                         duration=metadata.get("duration")
                     )
                     
@@ -362,6 +389,100 @@ class MusicService:
             return int(value)
         except:
             return None
+    
+    def _extract_metadata_from_path(self, file_path: str, filename: str, directory: str) -> Optional[dict]:
+        """
+        Extract metadata from file path and filename when tags are missing/corrupt.
+        Handles common naming patterns like:
+        - "Artist - Album (Year)/01. Artist - Title.mp3"
+        - "Artist - Album/01 Title.mp3"
+        """
+        import re
+        
+        try:
+            # Try to get duration even if tags failed
+            duration = None
+            try:
+                audio = MutagenFile(file_path)
+                if audio and audio.info:
+                    duration = int(audio.info.length)
+            except:
+                pass
+            
+            # Extract from directory name (usually "Artist - Album (Year)")
+            dir_name = os.path.basename(directory)
+            artist_name = None
+            album_name = None
+            
+            # Pattern: "Artist - Album (Year)" or "Artist - Album"
+            dir_match = re.match(r'^(.+?)\s*-\s*(.+?)(?:\s*\(\d{4}\))?$', dir_name)
+            if dir_match:
+                artist_name = dir_match.group(1).strip()
+                album_name = dir_match.group(2).strip()
+            else:
+                # Just use directory name as album
+                album_name = dir_name
+            
+            # Extract from filename
+            base_name = os.path.splitext(filename)[0]
+            track_number = None
+            track_title = None
+            
+            # Pattern: "01. Artist - Title" or "01 - Title" or "01 Title"
+            track_match = re.match(r'^(\d+)[.\s-]+(?:(.+?)\s*-\s*)?(.+)$', base_name)
+            if track_match:
+                track_number = int(track_match.group(1))
+                if track_match.group(2):
+                    # Has artist in filename
+                    if not artist_name:
+                        artist_name = track_match.group(2).strip()
+                track_title = track_match.group(3).strip()
+            else:
+                track_title = base_name
+            
+            return {
+                "title": track_title,
+                "artist": artist_name,
+                "album": album_name,
+                "genre": None,
+                "tracknumber": track_number,
+                "discnumber": 1,
+                "duration": duration
+            }
+            
+        except Exception as e:
+            print(f"Error extracting metadata from path {file_path}: {e}")
+            return None
+    
+    def _extract_album_from_path(self, directory: str) -> Optional[str]:
+        """Extract album name from directory path"""
+        import re
+        dir_name = os.path.basename(directory)
+        
+        # Pattern: "Artist - Album (Year)" -> extract Album
+        match = re.match(r'^.+?\s*-\s*(.+?)(?:\s*\(\d{4}\))?$', dir_name)
+        if match:
+            return match.group(1).strip()
+        
+        # Just return directory name
+        return dir_name if dir_name else None
+    
+    def _clean_filename_for_title(self, filename: str) -> str:
+        """Clean filename to use as track title"""
+        import re
+        # Remove extension
+        base = os.path.splitext(filename)[0]
+        
+        # Remove track number prefix (e.g., "01. ", "01 - ")
+        base = re.sub(r'^\d+[.\s-]+', '', base)
+        
+        # Remove artist prefix if present (e.g., "Artist - ")
+        if ' - ' in base:
+            parts = base.split(' - ', 1)
+            if len(parts) == 2:
+                base = parts[1]
+        
+        return base.strip() or filename
     
     def _format_duration(self, seconds: Optional[int]) -> str:
         """Format duration in seconds to MM:SS"""
