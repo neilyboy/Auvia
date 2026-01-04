@@ -17,23 +17,32 @@ from app.schemas.music import (
 from app.services.music import MusicService
 from app.services.qobuz import QobuzService
 from app.services.streamrip import StreamripService
+from app.services.cache import cache_get, cache_set
 
 router = APIRouter(prefix="/music", tags=["Music"])
+
+TRENDING_CACHE_KEY = "trending_qobuz"
+TRENDING_CACHE_TTL = 600  # 10 minutes
 
 
 @router.get("/trending", response_model=TrendingResponse)
 async def get_trending(db: AsyncSession = Depends(get_db)):
     """Get trending, new releases, and recently played music"""
-    qobuz_service = await QobuzService.create()
     music_service = MusicService(db)
     
-    # Get trending from Qobuz API
-    trending_data = await qobuz_service.get_trending()
+    # Try to get Qobuz trending from cache
+    trending_data = await cache_get(TRENDING_CACHE_KEY)
     
-    # Get recently played from local DB
+    if not trending_data:
+        # Fetch from Qobuz API and cache
+        qobuz_service = await QobuzService.create()
+        trending_data = await qobuz_service.get_trending()
+        await cache_set(TRENDING_CACHE_KEY, trending_data, TRENDING_CACHE_TTL)
+    
+    # Get recently played from local DB (always fresh)
     recently_played = await music_service.get_recently_played(limit=20)
     
-    # Get recently added albums
+    # Get recently added albums (always fresh)
     recently_added = await music_service.get_recently_added_albums(limit=10)
     
     return TrendingResponse(

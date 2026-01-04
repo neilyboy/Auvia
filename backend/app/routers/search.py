@@ -8,8 +8,11 @@ from app.database import get_db
 from app.models.music import Album, Track, Artist
 from app.schemas.music import SearchResult, AlbumResponse, TrackResponse, ArtistResponse
 from app.services.qobuz import QobuzService
+from app.services.cache import cache_get, cache_set
 
 router = APIRouter(prefix="/search", tags=["Search"])
+
+SEARCH_CACHE_TTL = 300  # 5 minutes
 
 
 @router.get("", response_model=SearchResult)
@@ -29,17 +32,27 @@ async def search(
     local_tracks = await search_local_tracks(db, query)
     local_artists = await search_local_artists(db, query)
     
-    # Search Qobuz API for remote results
+    # Search Qobuz API for remote results (with caching)
     remote_albums = []
     remote_tracks = []
     remote_artists = []
     
     if include_remote:
-        qobuz_service = await QobuzService.create()
-        remote_results = await qobuz_service.search(query)
-        remote_albums = remote_results.get("albums", [])
-        remote_tracks = remote_results.get("tracks", [])
-        remote_artists = remote_results.get("artists", [])
+        cache_key = f"search_qobuz:{query}"
+        cached_results = await cache_get(cache_key)
+        
+        if cached_results:
+            remote_albums = cached_results.get("albums", [])
+            remote_tracks = cached_results.get("tracks", [])
+            remote_artists = cached_results.get("artists", [])
+        else:
+            qobuz_service = await QobuzService.create()
+            remote_results = await qobuz_service.search(query)
+            remote_albums = remote_results.get("albums", [])
+            remote_tracks = remote_results.get("tracks", [])
+            remote_artists = remote_results.get("artists", [])
+            # Cache the Qobuz results
+            await cache_set(cache_key, remote_results, SEARCH_CACHE_TTL)
     
     # Merge results, prioritizing local (downloaded) content
     all_albums = merge_album_results(local_albums, remote_albums)
