@@ -182,9 +182,22 @@ class DownloadService:
             
             # If play_track_id specified, find that specific track
             if play_track_id:
+                print(f"Looking for specific track with qobuz_id: {play_track_id}")
                 target_track = next((t for t in tracks if t.qobuz_id == play_track_id), None)
+                
+                # If not found by qobuz_id, try to match by track number from qobuz_id
+                # Qobuz track IDs are often just the track number on the album
+                if not target_track and play_track_id.isdigit():
+                    track_num = int(play_track_id)
+                    target_track = next((t for t in tracks if t.track_number == track_num), None)
+                    if target_track:
+                        print(f"Found track by track number: {target_track.title}")
+                
                 if target_track:
+                    print(f"Queueing only specific track: {target_track.title}")
                     tracks = [target_track]  # Only queue the specific track
+                else:
+                    print(f"Could not find track {play_track_id}, queueing all {len(tracks)} tracks")
             
             if play_now:
                 # Clear existing queue and add new tracks
