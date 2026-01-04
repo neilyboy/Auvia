@@ -6,7 +6,7 @@ import os
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, music, admin, queue, search
+from app.routers import auth, music, admin, queue, search, likes
 
 
 @asynccontextmanager
@@ -82,6 +82,7 @@ app.include_router(music.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(queue.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
+app.include_router(likes.router, prefix="/api")
 
 
 @app.get("/api/health")

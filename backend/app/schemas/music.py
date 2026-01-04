@@ -129,3 +129,26 @@ class TrendingResponse(BaseModel):
     featured: List[AlbumResponse] = []
     recently_played: List[TrackResponse] = []
     recently_added: List[AlbumResponse] = []
+
+
+class LikedTrackResponse(BaseModel):
+    id: int
+    track: TrackResponse
+    liked_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LikedAlbumResponse(BaseModel):
+    id: int
+    album: AlbumResponse
+    liked_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LikeRequest(BaseModel):
+    track_id: Optional[int] = None
+    album_id: Optional[int] = None

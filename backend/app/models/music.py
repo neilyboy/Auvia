@@ -97,3 +97,23 @@ class DownloadTask(Base):
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class LikedTrack(Base):
+    __tablename__ = "liked_tracks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    track_id = Column(Integer, ForeignKey("tracks.id"), nullable=False, unique=True)
+    liked_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    track = relationship("Track")
+
+
+class LikedAlbum(Base):
+    __tablename__ = "liked_albums"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    album_id = Column(Integer, ForeignKey("albums.id"), nullable=False, unique=True)
+    liked_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    album = relationship("Album")

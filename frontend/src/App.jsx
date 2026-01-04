@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useAuthStore } from './stores/authStore'
 import { usePlayerStore } from './stores/playerStore'
+import { useLikesStore } from './stores/likesStore'
 import Layout from './components/Layout'
 import Home from './pages/Home'
 import Search from './pages/Search'
@@ -11,11 +12,13 @@ import Artist from './pages/Artist'
 import Queue from './pages/Queue'
 import Admin from './pages/Admin'
 import Setup from './pages/Setup'
+import Liked from './pages/Liked'
 
 function App() {
   const { checkSetupStatus, setupStatus, loading } = useAuthStore()
   const initMediaSession = usePlayerStore((state) => state.initMediaSession)
   const restoreQueue = usePlayerStore((state) => state.restoreQueue)
+  const fetchLikedIds = useLikesStore((state) => state.fetchLikedIds)
 
   useEffect(() => {
     checkSetupStatus()
@@ -23,6 +26,8 @@ function App() {
     initMediaSession()
     // Restore queue from localStorage (doesn't auto-play, just restores state)
     restoreQueue()
+    // Fetch liked track/album IDs for heart buttons
+    fetchLikedIds()
     
     // Cleanup Media Session on page close/hide for iOS (but preserve queue in localStorage)
     const handleBeforeUnload = () => {
@@ -60,7 +65,7 @@ function App() {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [checkSetupStatus, initMediaSession, restoreQueue])
+  }, [checkSetupStatus, initMediaSession, restoreQueue, fetchLikedIds])
 
   if (loading) {
     return (
@@ -88,6 +93,7 @@ function App() {
         <Route path="/album/:id" element={<Album />} />
         <Route path="/artist/:id" element={<Artist />} />
         <Route path="/queue" element={<Queue />} />
+        <Route path="/liked" element={<Liked />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

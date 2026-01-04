@@ -1,11 +1,13 @@
 import { Play, Pause, MoreHorizontal, Plus, Check, Download } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { usePlayerStore } from '../stores/playerStore'
+import LikeButton from './LikeButton'
 
 export default function TrackItem({ 
   track, 
   index, 
   showAlbum = false,
+  showLikeButton = true,
   onPlay,
   onAddToQueue 
 }) {
@@ -67,6 +69,11 @@ export default function TrackItem({
           {showAlbum && track.album_title && ` • ${track.album_title}`}
         </p>
       </div>
+
+      {/* Like Button */}
+      {showLikeButton && track.id && (
+        <LikeButton trackId={track.id} size={16} />
+      )}
 
       {/* Status Indicators */}
       <div className="flex items-center gap-2">

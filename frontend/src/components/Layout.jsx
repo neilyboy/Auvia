@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Home, Search, Library, ListMusic, Settings } from 'lucide-react'
+import { Home, Search, Library, ListMusic, Settings, Heart } from 'lucide-react'
 import Player from './Player'
 import { usePlayerStore } from '../stores/playerStore'
 
@@ -7,6 +7,7 @@ const navItems = [
   { path: '/', icon: Home, label: 'Home' },
   { path: '/search', icon: Search, label: 'Search' },
   { path: '/library', icon: Library, label: 'Library' },
+  { path: '/liked', icon: Heart, label: 'Liked' },
   { path: '/queue', icon: ListMusic, label: 'Queue' },
 ]
 
