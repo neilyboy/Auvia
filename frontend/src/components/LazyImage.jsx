@@ -13,6 +13,19 @@ export default function LazyImage({
   const imgRef = useRef(null)
 
   useEffect(() => {
+    const element = imgRef.current
+    if (!element) return
+
+    // Check if already in view immediately (fixes first-render issue)
+    const rect = element.getBoundingClientRect()
+    const isVisible = rect.top < window.innerHeight + 100 && rect.bottom > -100 &&
+                      rect.left < window.innerWidth + 100 && rect.right > -100
+    
+    if (isVisible) {
+      setIsInView(true)
+      return
+    }
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -21,14 +34,12 @@ export default function LazyImage({
         }
       },
       {
-        rootMargin: '100px', // Start loading 100px before entering viewport
+        rootMargin: '100px',
         threshold: 0.01
       }
     )
 
-    if (imgRef.current) {
-      observer.observe(imgRef.current)
-    }
+    observer.observe(element)
 
     return () => observer.disconnect()
   }, [])
