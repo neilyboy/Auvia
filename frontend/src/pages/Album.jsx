@@ -211,7 +211,10 @@ export default function Album() {
   }
 
   const handlePlayAll = async () => {
-    if (album?.tracks?.length > 0) {
+    // Check if album is downloaded (has local tracks with IDs)
+    const hasDownloadedTracks = album?.is_downloaded && album?.tracks?.some(t => t.id && t.is_downloaded)
+    
+    if (hasDownloadedTracks) {
       // If something is playing, show action modal
       if (currentTrack) {
         setPlayActionModal({ open: true, tracks: album.tracks })
@@ -227,11 +230,17 @@ export default function Album() {
     }
   }
 
-  const handleShuffle = () => {
-    if (album?.tracks?.length > 0) {
+  const handleShuffle = async () => {
+    const hasDownloadedTracks = album?.is_downloaded && album?.tracks?.some(t => t.id && t.is_downloaded)
+    
+    if (hasDownloadedTracks) {
       const shuffled = [...album.tracks].sort(() => Math.random() - 0.5)
       setQueue(shuffled)
       toast.success(`Shuffling ${album.title}`)
+    } else if (album?.qobuz_url) {
+      // Download first, then shuffle will work after refresh
+      setPlayAfterDownload(true)
+      await handleDownload()
     }
   }
 
@@ -239,11 +248,31 @@ export default function Album() {
     if (!album?.qobuz_url || downloading) return
     
     setDownloading(true)
-    toast.loading('Downloading album...', { id: 'download' })
+    toast.loading('Starting download...', { id: 'download' })
+    
+    // Rotate progress messages to show activity
+    const progressMessages = [
+      'Connecting to Qobuz...',
+      'Downloading tracks...',
+      'This may take a few minutes...',
+      'Still downloading...',
+      'Processing audio files...',
+      'Almost there...',
+    ]
+    let msgIndex = 0
+    const progressInterval = setInterval(() => {
+      msgIndex = (msgIndex + 1) % progressMessages.length
+      toast.loading(progressMessages[msgIndex], { id: 'download' })
+    }, 5000)
+    
     try {
       await api.post('/queue/play-album', { qobuz_album_url: album.qobuz_url })
       // Don't dismiss toast - polling will update it when complete
+      // But clear the interval - polling will show its own messages
+      clearInterval(progressInterval)
+      toast.loading('Download in progress - checking status...', { id: 'download' })
     } catch (error) {
+      clearInterval(progressInterval)
       toast.error('Failed to download album', { id: 'download' })
       setDownloading(false)
       setPlayAfterDownload(false)
@@ -287,8 +316,20 @@ export default function Album() {
     setPendingAction(action)
     setDownloading(true)
 
-    const actionText = action === 'play' ? 'Playing' : 'Queuing'
     toast.loading(`Downloading "${track.title}"...`, { id: 'track-download' })
+    
+    // Rotate progress messages
+    const progressMessages = [
+      `Downloading "${track.title}"...`,
+      'Fetching from Qobuz...',
+      'This may take a moment...',
+      'Processing audio...',
+    ]
+    let msgIndex = 0
+    const progressInterval = setInterval(() => {
+      msgIndex = (msgIndex + 1) % progressMessages.length
+      toast.loading(progressMessages[msgIndex], { id: 'track-download' })
+    }, 4000)
 
     try {
       // Start the album download via queue endpoint
@@ -296,10 +337,11 @@ export default function Album() {
         qobuz_album_url: album.qobuz_url
       })
       
-      // Update toast to show we're waiting for download
-      toast.loading(`Downloading album for "${track.title}"...`, { id: 'track-download' })
+      clearInterval(progressInterval)
+      toast.loading(`Downloading - will ${action} "${track.title}" when ready...`, { id: 'track-download' })
       
     } catch (error) {
+      clearInterval(progressInterval)
       console.error('Download failed:', error)
       toast.error('Failed to start download', { id: 'track-download' })
       setDownloading(false)
