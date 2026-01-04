@@ -3,9 +3,9 @@ import os
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, delete
 
-from app.models.music import DownloadTask, Album, Track, Artist
+from app.models.music import DownloadTask, Album, Track, Artist, QueueItem
 from app.models.settings import StorageLocation, QobuzConfig
 from app.services.streamrip import StreamripService
 from app.services.music import MusicService
@@ -23,7 +23,9 @@ class DownloadService:
         qobuz_url: str,
         album_title: str = None,
         artist_name: str = None,
-        track_id: str = None
+        track_id: str = None,
+        play_now: bool = False,
+        play_next: bool = False
     ) -> DownloadTask:
         """Start a new download task"""
         # Check if already downloading this URL
@@ -50,13 +52,14 @@ class DownloadService:
         await self.db.refresh(task)
         
         # Start download in background
-        asyncio.create_task(self._execute_download(task.id, track_id))
+        asyncio.create_task(self._execute_download(task.id, track_id, play_now, play_next))
         
         return task
     
-    async def _execute_download(self, task_id: int, play_track_id: str = None):
+    async def _execute_download(self, task_id: int, play_track_id: str = None, play_now: bool = False, play_next: bool = False):
         """Execute the download in background"""
         from app.database import async_session_maker
+        from sqlalchemy.orm import selectinload
         
         async with async_session_maker() as db:
             # Get task
@@ -113,6 +116,12 @@ class DownloadService:
                     # Scan downloaded files and add to database
                     music_service = MusicService(db)
                     await music_service.scan_directory(output_path or download_path)
+                    
+                    # Queue tracks if requested
+                    if play_now or play_next:
+                        await self._queue_downloaded_tracks(
+                            db, task.qobuz_url, play_track_id, play_now, play_next
+                        )
                 else:
                     task.status = "failed"
                     task.error_message = "Download failed"
@@ -120,8 +129,118 @@ class DownloadService:
             except Exception as e:
                 task.status = "failed"
                 task.error_message = str(e)
+                print(f"Download error: {e}")
             
             await db.commit()
+    
+    async def _queue_downloaded_tracks(
+        self,
+        db: AsyncSession,
+        qobuz_url: str,
+        play_track_id: str = None,
+        play_now: bool = False,
+        play_next: bool = False
+    ):
+        """Queue downloaded tracks for playback"""
+        from sqlalchemy.orm import selectinload
+        
+        try:
+            # Extract qobuz album ID from URL
+            # URL format: https://www.qobuz.com/us-en/album/album-slug/ALBUM_ID
+            qobuz_album_id = qobuz_url.rstrip('/').split('/')[-1]
+            
+            # Find the album by qobuz_id
+            result = await db.execute(
+                select(Album)
+                .options(selectinload(Album.tracks))
+                .where(Album.qobuz_id == qobuz_album_id)
+            )
+            album = result.scalar_one_or_none()
+            
+            if not album:
+                # Try to find by qobuz_url
+                result = await db.execute(
+                    select(Album)
+                    .options(selectinload(Album.tracks))
+                    .where(Album.qobuz_url == qobuz_url)
+                )
+                album = result.scalar_one_or_none()
+            
+            if not album or not album.tracks:
+                print(f"Could not find album or tracks for queueing: {qobuz_url}")
+                return
+            
+            # Sort tracks by disc and track number
+            tracks = sorted(album.tracks, key=lambda t: (t.disc_number or 1, t.track_number or 0))
+            
+            # If play_track_id specified, find that specific track
+            if play_track_id:
+                target_track = next((t for t in tracks if t.qobuz_id == play_track_id), None)
+                if target_track:
+                    tracks = [target_track]  # Only queue the specific track
+            
+            if play_now:
+                # Clear existing queue and add new tracks
+                await db.execute(delete(QueueItem))
+                
+                for i, track in enumerate(tracks):
+                    queue_item = QueueItem(
+                        track_id=track.id,
+                        position=i + 1,
+                        is_playing=(i == 0)  # First track starts playing
+                    )
+                    db.add(queue_item)
+                
+                print(f"Queued {len(tracks)} tracks for immediate playback")
+                
+            elif play_next:
+                # Find current playing position and insert after
+                current_result = await db.execute(
+                    select(QueueItem).where(QueueItem.is_playing == True)
+                )
+                current = current_result.scalar_one_or_none()
+                
+                if current:
+                    insert_position = current.position + 1
+                    
+                    # Shift existing items to make room
+                    await db.execute(
+                        QueueItem.__table__.update()
+                        .where(QueueItem.position >= insert_position)
+                        .values(position=QueueItem.position + len(tracks))
+                    )
+                else:
+                    insert_position = 1
+                
+                for i, track in enumerate(tracks):
+                    queue_item = QueueItem(
+                        track_id=track.id,
+                        position=insert_position + i,
+                        is_playing=False
+                    )
+                    db.add(queue_item)
+                
+                print(f"Queued {len(tracks)} tracks to play next")
+            
+            else:
+                # Add to end of queue
+                max_pos_result = await db.execute(select(func.max(QueueItem.position)))
+                max_pos = max_pos_result.scalar() or 0
+                
+                for i, track in enumerate(tracks):
+                    queue_item = QueueItem(
+                        track_id=track.id,
+                        position=max_pos + i + 1,
+                        is_playing=False
+                    )
+                    db.add(queue_item)
+                
+                print(f"Added {len(tracks)} tracks to queue")
+            
+            await db.commit()
+            
+        except Exception as e:
+            print(f"Error queueing tracks: {e}")
     
     async def get_task_status(self, task_id: int) -> Optional[DownloadTask]:
         """Get status of a download task"""

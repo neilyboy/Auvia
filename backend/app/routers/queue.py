@@ -77,9 +77,11 @@ async def add_to_queue(
         # Start download and add to queue when ready
         task = await download_service.start_download(
             request.qobuz_album_url,
-            track_id=request.qobuz_track_id
+            track_id=request.qobuz_track_id,
+            play_now=request.play_now,
+            play_next=request.play_next
         )
-        return {"message": "Download started", "task_id": task.id}
+        return {"message": "Download started - will queue when ready", "task_id": task.id}
     
     else:
         raise HTTPException(
@@ -158,8 +160,8 @@ async def play_album(
         if not album.is_downloaded:
             # Need to download first
             if album.qobuz_url:
-                task = await download_service.start_download(album.qobuz_url)
-                return {"message": "Download started", "task_id": task.id}
+                task = await download_service.start_download(album.qobuz_url, play_now=True)
+                return {"message": "Download started - will play when ready", "task_id": task.id}
             else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -170,8 +172,8 @@ async def play_album(
         
     elif request.qobuz_album_url:
         # Download album first
-        task = await download_service.start_download(request.qobuz_album_url)
-        return {"message": "Download started, album will be queued when ready", "task_id": task.id}
+        task = await download_service.start_download(request.qobuz_album_url, play_now=True)
+        return {"message": "Download started - will play when ready", "task_id": task.id}
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
