@@ -374,7 +374,10 @@ export default function Album() {
           <h1 className="text-2xl md:text-3xl font-bold text-white mb-1">
             {album.title}
           </h1>
-          <p className="text-auvia-muted text-lg mb-2">
+          <p 
+            className="text-auvia-muted text-lg mb-2 hover:text-white cursor-pointer transition-colors"
+            onClick={() => album.artist_id ? navigate(`/artist/${album.artist_id}`) : null}
+          >
             {album.artist_name}
           </p>
           <div className="flex items-center gap-3 text-auvia-muted text-sm mb-4">
