@@ -375,3 +375,18 @@ async def clear_cache(
     
     total = search_cleared + qobuz_cleared + trending_cleared
     return {"message": f"Cleared {total} cached items", "count": total}
+
+
+@router.post("/verify-files")
+async def verify_files(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """Verify all downloaded files exist and clean up orphaned records"""
+    from app.services.music import MusicService
+    music_service = MusicService(db)
+    stats = await music_service.verify_local_files()
+    return {
+        "message": f"Verified {stats['verified']} tracks, found {stats['missing_tracks']} missing tracks and {stats['missing_albums']} missing albums",
+        "stats": stats
+    }

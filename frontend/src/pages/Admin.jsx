@@ -545,6 +545,7 @@ function FeatureSettings() {
   const [saving, setSaving] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
+  const [verifying, setVerifying] = useState(false)
 
   useEffect(() => {
     fetchSettings()
@@ -599,6 +600,18 @@ function FeatureSettings() {
       toast.error('Failed to clear cache')
     } finally {
       setClearingCache(false)
+    }
+  }
+
+  const handleVerifyFiles = async () => {
+    setVerifying(true)
+    try {
+      const response = await api.post('/admin/verify-files')
+      toast.success(response.data.message)
+    } catch (error) {
+      toast.error('Failed to verify files')
+    } finally {
+      setVerifying(false)
     }
   }
 
@@ -687,6 +700,29 @@ function FeatureSettings() {
           >
             <Trash2 size={16} />
             {clearingCache ? 'Clearing...' : 'Clear'}
+          </button>
+        </div>
+
+        {/* Verify Files */}
+        <div className="flex items-center justify-between p-4 bg-auvia-dark rounded-xl">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <Check size={18} className="text-green-400" />
+              <span className="text-white font-medium">Verify Files</span>
+            </div>
+            <p className="text-auvia-muted text-sm mt-1">
+              Check all downloaded tracks exist on disk and clean up orphaned records
+            </p>
+          </div>
+          <button
+            onClick={handleVerifyFiles}
+            disabled={verifying}
+            className={`px-4 py-2 bg-green-600 rounded-lg text-white font-medium flex items-center gap-2 touch-feedback ${
+              verifying ? 'opacity-50' : ''
+            }`}
+          >
+            <Check size={16} />
+            {verifying ? 'Verifying...' : 'Verify'}
           </button>
         </div>
       </div>
