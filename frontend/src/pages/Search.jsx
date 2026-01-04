@@ -78,17 +78,8 @@ export default function Search() {
         setQueue([track])
       }
     } else if (track.qobuz_album_url) {
-      toast.loading('Downloading...', { id: 'download' })
-      try {
-        await api.post('/queue/add', {
-          qobuz_track_id: track.qobuz_id,
-          qobuz_album_url: track.qobuz_album_url,
-          play_now: true
-        })
-        toast.success('Track queued for download', { id: 'download' })
-      } catch (error) {
-        toast.error('Failed to queue track', { id: 'download' })
-      }
+      // Show action modal for remote tracks too
+      setPlayActionModal({ open: true, type: 'remote_track', item: track, tracks: null })
     } else {
       toast.error('Cannot play - album URL not available')
     }
@@ -249,31 +240,74 @@ export default function Search() {
       <PlayActionModal
         isOpen={playActionModal.open}
         onClose={() => setPlayActionModal({ open: false, type: null, item: null, tracks: null })}
-        onPlayNow={() => {
-          if (playActionModal.tracks) {
+        onPlayNow={async () => {
+          if (playActionModal.type === 'remote_track') {
+            // Download and play remote track
+            const track = playActionModal.item
+            toast.loading('Downloading...', { id: 'download' })
+            try {
+              await api.post('/queue/add', {
+                qobuz_track_id: track.qobuz_id,
+                qobuz_album_url: track.qobuz_album_url,
+                play_now: true
+              })
+              toast.success('Download started - will play when ready', { id: 'download' })
+              // Navigate to album page to see download progress
+              const qobuzId = track.qobuz_album_url.split('/').pop()
+              navigate(`/album/qobuz-${qobuzId}`)
+            } catch (error) {
+              toast.error('Failed to start download', { id: 'download' })
+            }
+          } else if (playActionModal.tracks) {
             setQueue(playActionModal.tracks)
             toast.success(playActionModal.type === 'album' 
               ? `Playing ${playActionModal.item?.title}` 
               : `Playing ${playActionModal.item?.title}`)
           }
         }}
-        onAddToQueue={() => {
-          if (playActionModal.tracks) {
+        onAddToQueue={async () => {
+          if (playActionModal.type === 'remote_track') {
+            const track = playActionModal.item
+            toast.loading('Downloading...', { id: 'download' })
+            try {
+              await api.post('/queue/add', {
+                qobuz_track_id: track.qobuz_id,
+                qobuz_album_url: track.qobuz_album_url,
+                play_now: false
+              })
+              toast.success('Download started - will add to queue when ready', { id: 'download' })
+            } catch (error) {
+              toast.error('Failed to start download', { id: 'download' })
+            }
+          } else if (playActionModal.tracks) {
             addTracksToQueue(playActionModal.tracks)
             toast.success(playActionModal.type === 'album'
               ? `Added ${playActionModal.item?.title} to queue`
               : `Added "${playActionModal.item?.title}" to queue`)
           }
         }}
-        onPlayNext={() => {
-          if (playActionModal.tracks) {
+        onPlayNext={async () => {
+          if (playActionModal.type === 'remote_track') {
+            const track = playActionModal.item
+            toast.loading('Downloading...', { id: 'download' })
+            try {
+              await api.post('/queue/add', {
+                qobuz_track_id: track.qobuz_id,
+                qobuz_album_url: track.qobuz_album_url,
+                play_next: true
+              })
+              toast.success('Download started - will play next when ready', { id: 'download' })
+            } catch (error) {
+              toast.error('Failed to start download', { id: 'download' })
+            }
+          } else if (playActionModal.tracks) {
             addTracksToQueueNext(playActionModal.tracks)
             toast.success(playActionModal.type === 'album'
               ? `${playActionModal.item?.title} will play next`
               : `"${playActionModal.item?.title}" will play next`)
           }
         }}
-        title={playActionModal.type === 'album' ? 'Play Album' : 'Play Track'}
+        title={playActionModal.type === 'remote_track' ? 'Download & Play Track' : (playActionModal.type === 'album' ? 'Play Album' : 'Play Track')}
       />
     </div>
   )
