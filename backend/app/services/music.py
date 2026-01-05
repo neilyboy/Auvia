@@ -556,7 +556,8 @@ class MusicService:
             else:
                 stats["verified"] += 1
         
-        # Check albums - if all tracks are missing, mark album as not downloaded
+        # Check albums - if all tracks are missing, DELETE the album entirely
+        # This prevents stale records from appearing in search results
         for album_id in albums_to_check:
             result = await self.db.execute(
                 select(Album).where(Album.id == album_id).options(selectinload(Album.tracks))
@@ -566,11 +567,25 @@ class MusicService:
                 # Check if any tracks are still downloaded
                 has_downloaded_tracks = any(t.is_downloaded for t in album.tracks)
                 if not has_downloaded_tracks:
-                    print(f"Album has no local files, marking as not downloaded: {album.title}")
-                    album.is_downloaded = False
-                    album.download_path = None
-                    album.cover_art_local = None
+                    print(f"Album has no local files, deleting from database: {album.title}")
+                    # Delete all tracks for this album first
+                    for track in album.tracks:
+                        await self.db.delete(track)
+                    # Delete the album
+                    await self.db.delete(album)
                     stats["missing_albums"] += 1
+        
+        # Clean up orphaned artists (artists with no albums)
+        from sqlalchemy import func
+        orphan_result = await self.db.execute(
+            select(Artist).where(
+                ~Artist.id.in_(select(Album.artist_id).distinct())
+            )
+        )
+        orphaned_artists = orphan_result.scalars().all()
+        for artist in orphaned_artists:
+            print(f"Deleting orphaned artist: {artist.name}")
+            await self.db.delete(artist)
         
         await self.db.commit()
         print(f"File verification complete: {stats}")
