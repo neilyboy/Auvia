@@ -390,3 +390,64 @@ async def verify_files(
         "message": f"Verified {stats['verified']} tracks, found {stats['missing_tracks']} missing tracks and {stats['missing_albums']} missing albums",
         "stats": stats
     }
+
+
+@router.post("/rebuild-library")
+async def rebuild_library(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    """
+    Completely rebuild the music library database.
+    This deletes ALL music data (tracks, albums, artists, queue, history) and re-scans from disk.
+    Use this when the database is out of sync with files on disk.
+    """
+    from app.models.music import Track, Album, Artist, QueueItem, PlayHistory, DownloadTask
+    from app.services.music import MusicService
+    
+    # Delete all music-related data in correct order (foreign key constraints)
+    await db.execute(delete(PlayHistory))
+    await db.execute(delete(QueueItem))
+    await db.execute(delete(DownloadTask))
+    await db.execute(delete(Track))
+    await db.execute(delete(Album))
+    await db.execute(delete(Artist))
+    await db.commit()
+    
+    # Clear caches
+    await cache_clear_pattern("search_qobuz:*")
+    await cache_clear_pattern("qobuz:*")
+    await cache_clear_pattern("trending:*")
+    
+    # Re-scan all storage locations
+    music_service = MusicService(db)
+    total_stats = {"albums": 0, "tracks": 0, "errors": 0}
+    
+    # Scan primary storage locations
+    result = await db.execute(
+        select(StorageLocation).where(StorageLocation.is_active == True)
+    )
+    locations = result.scalars().all()
+    
+    for location in locations:
+        if os.path.exists(location.path):
+            stats = await music_service.scan_directory(location.path)
+            total_stats["albums"] += stats["albums"]
+            total_stats["tracks"] += stats["tracks"]
+            total_stats["errors"] += stats["errors"]
+    
+    # Also scan default /music if not already covered
+    default_paths = ["/music", "/music2", "/music3"]
+    scanned_paths = {loc.path for loc in locations}
+    
+    for path in default_paths:
+        if path not in scanned_paths and os.path.exists(path):
+            stats = await music_service.scan_directory(path)
+            total_stats["albums"] += stats["albums"]
+            total_stats["tracks"] += stats["tracks"]
+            total_stats["errors"] += stats["errors"]
+    
+    return {
+        "message": f"Library rebuilt: {total_stats['albums']} albums, {total_stats['tracks']} tracks",
+        "stats": total_stats
+    }

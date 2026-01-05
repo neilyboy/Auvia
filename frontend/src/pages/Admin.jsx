@@ -546,6 +546,7 @@ function FeatureSettings() {
   const [scanning, setScanning] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  const [rebuilding, setRebuilding] = useState(false)
 
   useEffect(() => {
     fetchSettings()
@@ -612,6 +613,21 @@ function FeatureSettings() {
       toast.error('Failed to verify files')
     } finally {
       setVerifying(false)
+    }
+  }
+
+  const handleRebuildLibrary = async () => {
+    if (!window.confirm('This will DELETE all music data and re-scan from disk. Play history and queue will be lost. Continue?')) {
+      return
+    }
+    setRebuilding(true)
+    try {
+      const response = await api.post('/admin/rebuild-library')
+      toast.success(response.data.message)
+    } catch (error) {
+      toast.error('Failed to rebuild library')
+    } finally {
+      setRebuilding(false)
     }
   }
 
@@ -723,6 +739,29 @@ function FeatureSettings() {
           >
             <Check size={16} />
             {verifying ? 'Verifying...' : 'Verify'}
+          </button>
+        </div>
+
+        {/* Rebuild Library */}
+        <div className="flex items-center justify-between p-4 bg-auvia-dark rounded-xl border border-red-500/30">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <RefreshCw size={18} className="text-red-400" />
+              <span className="text-white font-medium">Rebuild Library</span>
+            </div>
+            <p className="text-auvia-muted text-sm mt-1">
+              Delete ALL music data and re-scan from disk. Use when database is out of sync.
+            </p>
+          </div>
+          <button
+            onClick={handleRebuildLibrary}
+            disabled={rebuilding}
+            className={`px-4 py-2 bg-red-600 rounded-lg text-white font-medium flex items-center gap-2 touch-feedback ${
+              rebuilding ? 'opacity-50' : ''
+            }`}
+          >
+            <RefreshCw size={16} className={rebuilding ? 'animate-spin' : ''} />
+            {rebuilding ? 'Rebuilding...' : 'Rebuild'}
           </button>
         </div>
       </div>
