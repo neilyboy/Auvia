@@ -316,20 +316,64 @@ def merge_track_results(local: List[TrackResponse], remote) -> List[TrackRespons
 
 
 def merge_artist_results(local: List[ArtistResponse], remote) -> List[ArtistResponse]:
-    """Merge local and remote artist results, prioritizing local"""
+    """Merge local and remote artist results, prioritizing local but using remote images"""
     seen_qobuz_ids = set()
+    seen_names = set()
     merged = []
     
-    for artist in local:
-        merged.append(artist)
+    # Build a map of remote artists by qobuz_id and name for image lookup
+    remote_by_qobuz_id = {}
+    remote_by_name = {}
+    for artist in remote:
         qobuz_id = get_attr(artist, 'qobuz_id')
+        name = get_attr(artist, 'name')
+        image_url = get_attr(artist, 'image_url')
+        if qobuz_id and image_url:
+            remote_by_qobuz_id[qobuz_id] = artist
+        if name and image_url:
+            remote_by_name[name.lower()] = artist
+    
+    for artist in local:
+        qobuz_id = get_attr(artist, 'qobuz_id')
+        name = get_attr(artist, 'name')
+        image_url = get_attr(artist, 'image_url')
+        
+        # If local artist has no image, try to get from remote
+        if not image_url:
+            remote_match = None
+            if qobuz_id and qobuz_id in remote_by_qobuz_id:
+                remote_match = remote_by_qobuz_id[qobuz_id]
+            elif name and name.lower() in remote_by_name:
+                remote_match = remote_by_name[name.lower()]
+            
+            if remote_match:
+                # Create new ArtistResponse with remote image
+                artist = ArtistResponse(
+                    id=get_attr(artist, 'id'),
+                    name=name,
+                    qobuz_id=qobuz_id or get_attr(remote_match, 'qobuz_id'),
+                    image_url=get_attr(remote_match, 'image_url'),
+                    bio=get_attr(artist, 'bio') or get_attr(remote_match, 'bio')
+                )
+        
+        merged.append(artist)
         if qobuz_id:
             seen_qobuz_ids.add(qobuz_id)
+        if name:
+            seen_names.add(name.lower())
     
     for artist in remote:
         qobuz_id = get_attr(artist, 'qobuz_id')
-        if qobuz_id and qobuz_id not in seen_qobuz_ids:
-            merged.append(artist)
+        name = get_attr(artist, 'name')
+        # Skip if we already have this artist by qobuz_id or name
+        if qobuz_id and qobuz_id in seen_qobuz_ids:
+            continue
+        if name and name.lower() in seen_names:
+            continue
+        merged.append(artist)
+        if qobuz_id:
             seen_qobuz_ids.add(qobuz_id)
+        if name:
+            seen_names.add(name.lower())
     
     return merged

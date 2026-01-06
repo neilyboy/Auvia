@@ -1,6 +1,6 @@
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.orm import selectinload
 import os
 from mutagen import File as MutagenFile
@@ -85,6 +85,9 @@ class MusicService:
         if not name or (isinstance(name, str) and not name.strip()):
             name = "Unknown Artist"
         
+        # Normalize name for comparison (strip whitespace)
+        name = name.strip()
+        
         if qobuz_id:
             result = await self.db.execute(
                 select(Artist).where(Artist.qobuz_id == qobuz_id)
@@ -93,9 +96,9 @@ class MusicService:
             if artist:
                 return artist
         
-        # Try by name
+        # Try by name (case-insensitive)
         result = await self.db.execute(
-            select(Artist).where(Artist.name == name)
+            select(Artist).where(func.lower(Artist.name) == func.lower(name))
         )
         artist = result.scalar_one_or_none()
         
@@ -104,6 +107,10 @@ class MusicService:
             self.db.add(artist)
             await self.db.commit()
             await self.db.refresh(artist)
+        elif qobuz_id and not artist.qobuz_id:
+            # Update existing artist with qobuz_id if we have it now
+            artist.qobuz_id = qobuz_id
+            await self.db.commit()
         
         return artist
     

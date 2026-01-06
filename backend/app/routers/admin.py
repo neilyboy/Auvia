@@ -451,3 +451,73 @@ async def rebuild_library(
         "message": f"Library rebuilt: {total_stats['albums']} albums, {total_stats['tracks']} tracks",
         "stats": total_stats
     }
+
+
+@router.post("/merge-duplicate-artists")
+async def merge_duplicate_artists(
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Find and merge duplicate artists (case-insensitive matching)"""
+    from sqlalchemy import func
+    from app.models.music import Artist, Album, Track
+    
+    # Find duplicate artist names (case-insensitive)
+    result = await db.execute(
+        select(func.lower(Artist.name), func.count(Artist.id))
+        .group_by(func.lower(Artist.name))
+        .having(func.count(Artist.id) > 1)
+    )
+    duplicates = result.all()
+    
+    merged_count = 0
+    for lower_name, count in duplicates:
+        # Get all artists with this name (case-insensitive)
+        result = await db.execute(
+            select(Artist)
+            .where(func.lower(Artist.name) == lower_name)
+            .order_by(Artist.id)
+        )
+        artists = result.scalars().all()
+        
+        if len(artists) < 2:
+            continue
+        
+        # Keep the first one (or the one with qobuz_id/image)
+        primary = artists[0]
+        for artist in artists[1:]:
+            if artist.qobuz_id and not primary.qobuz_id:
+                primary = artist
+            elif artist.image_url and not primary.image_url:
+                primary = artist
+        
+        # Merge all others into primary
+        for artist in artists:
+            if artist.id == primary.id:
+                continue
+            
+            # Update albums to point to primary artist
+            await db.execute(
+                Album.__table__.update()
+                .where(Album.artist_id == artist.id)
+                .values(artist_id=primary.id)
+            )
+            
+            # Update tracks to point to primary artist
+            await db.execute(
+                Track.__table__.update()
+                .where(Track.artist_id == artist.id)
+                .values(artist_id=primary.id)
+            )
+            
+            # Delete the duplicate artist
+            await db.delete(artist)
+            merged_count += 1
+    
+    await db.commit()
+    
+    return {
+        "message": f"Merged {merged_count} duplicate artists",
+        "duplicates_found": len(duplicates),
+        "artists_removed": merged_count
+    }

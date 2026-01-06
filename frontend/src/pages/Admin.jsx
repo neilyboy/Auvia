@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { 
   Settings, Lock, HardDrive, Music, 
   ChevronRight, Check, Save, Eye, EyeOff,
-  Plus, Trash2, RefreshCw, Download, Database
+  Plus, Trash2, RefreshCw, Download, Database, Users
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import api from '../services/api'
@@ -547,6 +547,7 @@ function FeatureSettings() {
   const [clearingCache, setClearingCache] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [rebuilding, setRebuilding] = useState(false)
+  const [mergingArtists, setMergingArtists] = useState(false)
 
   useEffect(() => {
     fetchSettings()
@@ -628,6 +629,18 @@ function FeatureSettings() {
       toast.error('Failed to rebuild library')
     } finally {
       setRebuilding(false)
+    }
+  }
+
+  const handleMergeArtists = async () => {
+    setMergingArtists(true)
+    try {
+      const response = await api.post('/admin/merge-duplicate-artists')
+      toast.success(response.data.message)
+    } catch (error) {
+      toast.error('Failed to merge duplicate artists')
+    } finally {
+      setMergingArtists(false)
     }
   }
 
@@ -739,6 +752,29 @@ function FeatureSettings() {
           >
             <Check size={16} />
             {verifying ? 'Verifying...' : 'Verify'}
+          </button>
+        </div>
+
+        {/* Merge Duplicate Artists */}
+        <div className="flex items-center justify-between p-4 bg-auvia-dark rounded-xl">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <Users size={18} className="text-purple-400" />
+              <span className="text-white font-medium">Merge Duplicate Artists</span>
+            </div>
+            <p className="text-auvia-muted text-sm mt-1">
+              Find and merge artists with the same name (case-insensitive)
+            </p>
+          </div>
+          <button
+            onClick={handleMergeArtists}
+            disabled={mergingArtists}
+            className={`px-4 py-2 bg-purple-600 rounded-lg text-white font-medium flex items-center gap-2 touch-feedback ${
+              mergingArtists ? 'opacity-50' : ''
+            }`}
+          >
+            <Users size={16} />
+            {mergingArtists ? 'Merging...' : 'Merge'}
           </button>
         </div>
 
