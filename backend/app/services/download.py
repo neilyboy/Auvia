@@ -112,19 +112,40 @@ class DownloadService:
                 )
                 
                 if success:
-                    task.status = "completed"
-                    task.completed_at = datetime.utcnow()
-                    
                     # Extract qobuz_id from URL for linking
                     qobuz_album_id = task.qobuz_url.rstrip('/').split('/')[-1]
+                    scan_path = output_path or download_path
+                    
+                    # Wait briefly to ensure files are fully written to disk
+                    await asyncio.sleep(1)
                     
                     # Scan downloaded files and add to database with qobuz_id
                     music_service = MusicService(db)
-                    await music_service.scan_directory(
-                        output_path or download_path,
+                    scan_stats = await music_service.scan_directory(
+                        scan_path,
                         qobuz_album_id=qobuz_album_id,
                         qobuz_url=task.qobuz_url
                     )
+                    
+                    # Verify tracks have proper metadata - retry scan if needed
+                    album = await self._verify_album_tracks(db, qobuz_album_id, task.qobuz_url)
+                    if album:
+                        # Check if any tracks have 0 duration - indicates incomplete metadata
+                        tracks_need_rescan = any(
+                            t.duration is None or t.duration == 0 
+                            for t in album.tracks if t.is_downloaded
+                        )
+                        if tracks_need_rescan:
+                            print(f"Some tracks have missing duration, waiting and re-scanning...")
+                            await asyncio.sleep(2)  # Wait for filesystem to settle
+                            await music_service.scan_directory(
+                                scan_path,
+                                qobuz_album_id=qobuz_album_id,
+                                qobuz_url=task.qobuz_url
+                            )
+                    
+                    task.status = "completed"
+                    task.completed_at = datetime.utcnow()
                     
                     # Queue tracks if requested
                     if play_now or play_next:
@@ -141,6 +162,29 @@ class DownloadService:
                 print(f"Download error: {e}")
             
             await db.commit()
+    
+    async def _verify_album_tracks(self, db: AsyncSession, qobuz_album_id: str, qobuz_url: str) -> Optional[Album]:
+        """Verify that album tracks were properly scanned with metadata"""
+        from sqlalchemy.orm import selectinload
+        
+        # Find the album by qobuz_id
+        result = await db.execute(
+            select(Album)
+            .options(selectinload(Album.tracks))
+            .where(Album.qobuz_id == qobuz_album_id)
+        )
+        album = result.scalar_one_or_none()
+        
+        if not album:
+            # Try to find by qobuz_url
+            result = await db.execute(
+                select(Album)
+                .options(selectinload(Album.tracks))
+                .where(Album.qobuz_url == qobuz_url)
+            )
+            album = result.scalar_one_or_none()
+        
+        return album
     
     async def _queue_downloaded_tracks(
         self,

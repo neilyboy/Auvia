@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+import asyncio
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
@@ -336,16 +337,52 @@ async def get_qobuz_album(qobuz_id: str):
 async def get_artists(
     page: int = 1,
     limit: int = 20,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    background_tasks: BackgroundTasks = None
 ):
-    """Get all artists"""
+    """Get all artists with images fetched from Qobuz if missing"""
     query = select(Artist).order_by(Artist.name)
     query = query.offset((page - 1) * limit).limit(limit)
     
     result = await db.execute(query)
     artists = result.scalars().all()
     
+    # Find artists missing images and fetch from Qobuz
+    artists_needing_images = [a for a in artists if not a.image_url]
+    if artists_needing_images:
+        # Fetch images in background to avoid slowing down response
+        asyncio.create_task(_fetch_artist_images(db, artists_needing_images))
+    
     return [ArtistResponse.model_validate(artist) for artist in artists]
+
+
+async def _fetch_artist_images(db: AsyncSession, artists: list):
+    """Background task to fetch and cache artist images from Qobuz"""
+    from app.database import async_session_maker
+    from app.services.qobuz import QobuzService
+    
+    try:
+        qobuz = await QobuzService.create()
+        async with async_session_maker() as session:
+            for artist in artists:
+                if artist.image_url:
+                    continue
+                try:
+                    image_url = await qobuz.get_artist_image(artist.name)
+                    if image_url:
+                        # Update the artist in database
+                        result = await session.execute(
+                            select(Artist).where(Artist.id == artist.id)
+                        )
+                        db_artist = result.scalar_one_or_none()
+                        if db_artist:
+                            db_artist.image_url = image_url
+                            print(f"Updated image for artist: {artist.name}")
+                except Exception as e:
+                    print(f"Error fetching image for {artist.name}: {e}")
+            await session.commit()
+    except Exception as e:
+        print(f"Error in background artist image fetch: {e}")
 
 
 @router.get("/artists/{artist_id}", response_model=ArtistResponse)

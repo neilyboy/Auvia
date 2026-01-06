@@ -195,6 +195,23 @@ class QobuzService:
         
         return []
     
+    async def get_artist_image(self, artist_name: str) -> Optional[str]:
+        """Get artist image URL by searching for the artist name"""
+        try:
+            artists = await self.search_artists(artist_name, limit=5)
+            if artists:
+                # Find best match (exact name match preferred)
+                for artist in artists:
+                    if artist.name.lower() == artist_name.lower() and artist.image_url:
+                        return artist.image_url
+                # Fallback to first result with image
+                for artist in artists:
+                    if artist.image_url:
+                        return artist.image_url
+        except Exception as e:
+            print(f"Error getting artist image for {artist_name}: {e}")
+        return None
+    
     async def get_album(self, album_id: str) -> Optional[AlbumResponse]:
         """Get album details including tracks"""
         try:
