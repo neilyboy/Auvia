@@ -51,39 +51,65 @@ export default function Album() {
     setDirectDownloading(true)
     setDownloadQualityModal(false)
     
-    // Show initial toast with quality info
-    toast.loading(`Downloading ${qualityName} from Qobuz...`, { id: 'direct-download' })
-    
-    // Progress message rotation for long downloads
-    const progressMessages = [
-      `Downloading ${qualityName} tracks...`,
-      'Fetching audio files...',
-      'This may take a few minutes for large albums...',
-      `Packaging ${qualityName} files...`,
-      'Almost there, creating ZIP...',
-    ]
-    let messageIndex = 0
-    const progressInterval = setInterval(() => {
-      messageIndex = (messageIndex + 1) % progressMessages.length
-      toast.loading(progressMessages[messageIndex], { id: 'direct-download' })
-    }, 8000) // Rotate message every 8 seconds
+    toast.loading(`Starting ${qualityName} download...`, { id: 'direct-download' })
     
     try {
-      const response = await api.post('/music/direct-download', null, {
-        params: { qobuz_url: album.qobuz_url, quality },
-        responseType: 'blob',
-        timeout: 600000 // 10 minute timeout for large albums
+      // Start the download task
+      const startResponse = await api.post('/music/direct-download', null, {
+        params: { qobuz_url: album.qobuz_url, quality }
       })
       
-      clearInterval(progressInterval)
+      const taskId = startResponse.data.task_id
+      if (!taskId) {
+        throw new Error('No task ID returned')
+      }
+      
+      // Poll for status
+      const statusMessages = {
+        'pending': `Starting ${qualityName} download...`,
+        'downloading': `Downloading ${qualityName} from Qobuz...`,
+        'packaging': `Creating ${qualityName} ZIP file...`,
+      }
+      
+      let status = 'pending'
+      let pollCount = 0
+      const maxPolls = 360 // 30 minutes max (5 second intervals)
+      
+      while (status !== 'ready' && status !== 'failed' && pollCount < maxPolls) {
+        await new Promise(resolve => setTimeout(resolve, 5000)) // Poll every 5 seconds
+        
+        const statusResponse = await api.get(`/music/direct-download/${taskId}/status`)
+        status = statusResponse.data.status
+        
+        if (statusMessages[status]) {
+          toast.loading(statusMessages[status], { id: 'direct-download' })
+        }
+        
+        if (status === 'failed') {
+          throw new Error(statusResponse.data.error || 'Download failed')
+        }
+        
+        pollCount++
+      }
+      
+      if (status !== 'ready') {
+        throw new Error('Download timed out')
+      }
+      
+      // Download the file
+      toast.loading('Downloading ZIP file...', { id: 'direct-download' })
+      
+      const fileResponse = await api.get(`/music/direct-download/${taskId}/file`, {
+        responseType: 'blob'
+      })
       
       // Create download link
-      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const url = window.URL.createObjectURL(new Blob([fileResponse.data]))
       const link = document.createElement('a')
       link.href = url
       
       // Get filename from content-disposition header or use album title
-      const contentDisposition = response.headers['content-disposition']
+      const contentDisposition = fileResponse.headers['content-disposition']
       let filename = `${album.title} [${qualityName}].zip`
       if (contentDisposition) {
         const match = contentDisposition.match(/filename="(.+)"/)
@@ -98,12 +124,11 @@ export default function Album() {
       
       toast.success(`${qualityName} download complete!`, { id: 'direct-download' })
     } catch (error) {
-      clearInterval(progressInterval)
       console.error('Direct download failed:', error)
       if (error.response?.status === 403) {
         toast.error('Direct downloads are disabled', { id: 'direct-download' })
       } else {
-        toast.error('Download failed - please try again', { id: 'direct-download' })
+        toast.error(error.message || 'Download failed - please try again', { id: 'direct-download' })
       }
     } finally {
       setDirectDownloading(false)

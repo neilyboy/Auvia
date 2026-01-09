@@ -762,21 +762,118 @@ async def check_direct_download_enabled(db: AsyncSession = Depends(get_db)):
     return {"enabled": setting.value == "true" if setting else False}
 
 
+# In-memory store for direct download tasks
+import uuid
+import tempfile
+import zipfile
+import shutil
+from datetime import datetime, timedelta
+
+_direct_download_tasks = {}
+
+def _cleanup_old_tasks():
+    """Remove tasks older than 1 hour"""
+    cutoff = datetime.utcnow() - timedelta(hours=1)
+    to_remove = [k for k, v in _direct_download_tasks.items() if v.get("created_at", datetime.utcnow()) < cutoff]
+    for k in to_remove:
+        task = _direct_download_tasks.pop(k, None)
+        if task and task.get("temp_dir"):
+            shutil.rmtree(task["temp_dir"], ignore_errors=True)
+
+
+async def _process_direct_download(task_id: str, qobuz_url: str, quality: int, quality_tag: str, temp_dir: str):
+    """Background task to download album and create zip"""
+    try:
+        _direct_download_tasks[task_id]["status"] = "downloading"
+        
+        # Use streamrip to download with specified quality
+        streamrip_service = StreamripService()
+        success = await streamrip_service.download_to_path(
+            qobuz_url, 
+            temp_dir, 
+            quality=quality
+        )
+        
+        if not success:
+            _direct_download_tasks[task_id]["status"] = "failed"
+            _direct_download_tasks[task_id]["error"] = "Download failed"
+            return
+        
+        _direct_download_tasks[task_id]["status"] = "packaging"
+        
+        # Find downloaded files and extract album info
+        downloaded_files = []
+        album_folder_name = None
+        for root, dirs, files in os.walk(temp_dir):
+            rel_root = os.path.relpath(root, temp_dir)
+            if rel_root != "." and album_folder_name is None:
+                album_folder_name = rel_root.split(os.sep)[0]
+            
+            for file in files:
+                if file.endswith(('.mp3', '.flac', '.jpg', '.png', '.pdf')):
+                    downloaded_files.append(os.path.join(root, file))
+        
+        if not downloaded_files:
+            _direct_download_tasks[task_id]["status"] = "failed"
+            _direct_download_tasks[task_id]["error"] = "No files downloaded"
+            return
+        
+        # Clean up album name
+        album_name = album_folder_name or "Album"
+        
+        def title_case_preserve(s):
+            words = s.split()
+            result = []
+            for word in words:
+                if word.isupper() and len(word) <= 4:
+                    result.append(word)
+                elif word.startswith('(') or word.endswith(')'):
+                    result.append(word)
+                else:
+                    result.append(word.capitalize())
+            return ' '.join(result)
+        
+        clean_album_name = title_case_preserve(album_name)
+        zip_folder_name = f"{clean_album_name} [{quality_tag}]"
+        
+        # Create zip file
+        zip_path = os.path.join(temp_dir, "album.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file_path in downloaded_files:
+                filename = os.path.basename(file_path)
+                arcname = f"{zip_folder_name}/{filename}"
+                zipf.write(file_path, arcname)
+        
+        # Calculate zip size
+        zip_size = os.path.getsize(zip_path)
+        
+        # Sanitize filename
+        safe_name = "".join(c for c in clean_album_name if c.isalnum() or c in (' ', '-', '_', '(', ')')).strip()
+        filename_with_quality = f"{safe_name} [{quality_tag}].zip"
+        
+        _direct_download_tasks[task_id]["status"] = "ready"
+        _direct_download_tasks[task_id]["zip_path"] = zip_path
+        _direct_download_tasks[task_id]["filename"] = filename_with_quality
+        _direct_download_tasks[task_id]["size"] = zip_size
+        
+    except Exception as e:
+        _direct_download_tasks[task_id]["status"] = "failed"
+        _direct_download_tasks[task_id]["error"] = str(e)
+
+
 @router.post("/direct-download")
-async def direct_download_album(
+async def start_direct_download(
     qobuz_url: str,
     quality: int = 1,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Download an album directly to the user's device.
+    Start downloading an album for direct download to user's device.
+    Returns a task ID to poll for status.
     Quality: 1=MP3 320, 2=16/44.1, 3=24/96, 4=24/192
-    Returns a zip file for download.
     """
-    import tempfile
-    import zipfile
-    import shutil
-    import asyncio
+    # Cleanup old tasks
+    _cleanup_old_tasks()
     
     # Check if feature is enabled
     result = await db.execute(
@@ -789,13 +886,8 @@ async def direct_download_album(
             detail="Direct download feature is not enabled"
         )
     
-    # Validate quality and get label for filename
-    quality_labels = {
-        1: "MP3",
-        2: "CD",
-        3: "HiRes",
-        4: "HiRes+"
-    }
+    # Validate quality
+    quality_labels = {1: "MP3", 2: "CD", 3: "HiRes", 4: "HiRes+"}
     if quality not in quality_labels:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -803,107 +895,72 @@ async def direct_download_album(
         )
     quality_tag = quality_labels[quality]
     
-    # Create temp directory for download
+    # Create task
+    task_id = str(uuid.uuid4())
     temp_dir = tempfile.mkdtemp(prefix="auvia_direct_")
     
-    try:
-        # Use streamrip to download with specified quality
-        streamrip_service = StreamripService()
-        success = await streamrip_service.download_to_path(
-            qobuz_url, 
-            temp_dir, 
-            quality=quality
-        )
-        
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Download failed"
-            )
-        
-        # Find downloaded files and extract album info
-        downloaded_files = []
-        album_folder_name = None
-        for root, dirs, files in os.walk(temp_dir):
-            # Get the first-level folder name as album info
-            rel_root = os.path.relpath(root, temp_dir)
-            if rel_root != "." and album_folder_name is None:
-                album_folder_name = rel_root.split(os.sep)[0]
-            
-            for file in files:
-                if file.endswith(('.mp3', '.flac', '.jpg', '.png', '.pdf')):
-                    downloaded_files.append(os.path.join(root, file))
-        
-        if not downloaded_files:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="No files downloaded"
-            )
-        
-        # Parse album folder name and create clean format
-        # Streamrip typically creates: "Artist - Title (Year)" or similar
-        import re
-        album_name = album_folder_name or "Album"
-        
-        # Try to extract and format nicely: "Artist - Title (Year)"
-        # Title case the album name for cleaner appearance
-        def title_case_preserve(s):
-            # Title case but preserve certain patterns
-            words = s.split()
-            result = []
-            for word in words:
-                if word.isupper() and len(word) <= 4:  # Keep short acronyms
-                    result.append(word)
-                elif word.startswith('(') or word.endswith(')'):
-                    result.append(word)
-                else:
-                    result.append(word.capitalize())
-            return ' '.join(result)
-        
-        # Clean up the album name
-        clean_album_name = title_case_preserve(album_name)
-        
-        # Create clean ZIP folder name with quality tag
-        zip_folder_name = f"{clean_album_name} [{quality_tag}]"
-        
-        # Create zip file with flat structure
-        zip_path = os.path.join(temp_dir, "album.zip")
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for file_path in downloaded_files:
-                # Get just the filename, place directly in the clean folder
-                filename = os.path.basename(file_path)
-                arcname = f"{zip_folder_name}/{filename}"
-                zipf.write(file_path, arcname)
-        
-        # Stream the zip file
-        async def stream_and_cleanup():
-            try:
-                async with aiofiles.open(zip_path, 'rb') as f:
-                    while chunk := await f.read(8192):
-                        yield chunk
-            finally:
-                # Cleanup temp directory after streaming
-                await asyncio.sleep(1)  # Brief delay to ensure file is fully sent
+    _direct_download_tasks[task_id] = {
+        "status": "pending",
+        "created_at": datetime.utcnow(),
+        "temp_dir": temp_dir,
+        "qobuz_url": qobuz_url,
+        "quality": quality
+    }
+    
+    # Start background task
+    asyncio.create_task(_process_direct_download(task_id, qobuz_url, quality, quality_tag, temp_dir))
+    
+    return {"task_id": task_id, "status": "pending"}
+
+
+@router.get("/direct-download/{task_id}/status")
+async def get_direct_download_status(task_id: str):
+    """Get status of a direct download task"""
+    task = _direct_download_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    response = {"task_id": task_id, "status": task["status"]}
+    if task["status"] == "failed":
+        response["error"] = task.get("error", "Unknown error")
+    elif task["status"] == "ready":
+        response["filename"] = task.get("filename")
+        response["size"] = task.get("size")
+    
+    return response
+
+
+@router.get("/direct-download/{task_id}/file")
+async def download_direct_download_file(task_id: str):
+    """Download the completed zip file"""
+    task = _direct_download_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    if task["status"] != "ready":
+        raise HTTPException(status_code=400, detail=f"Task not ready, status: {task['status']}")
+    
+    zip_path = task.get("zip_path")
+    if not zip_path or not os.path.exists(zip_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    filename = task.get("filename", "album.zip")
+    temp_dir = task.get("temp_dir")
+    
+    async def stream_and_cleanup():
+        try:
+            async with aiofiles.open(zip_path, 'rb') as f:
+                while chunk := await f.read(8192):
+                    yield chunk
+        finally:
+            # Cleanup after streaming
+            await asyncio.sleep(1)
+            if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
-        
-        # Sanitize filename and add quality tag
-        safe_name = "".join(c for c in clean_album_name if c.isalnum() or c in (' ', '-', '_', '(', ')')).strip()
-        filename_with_quality = f"{safe_name} [{quality_tag}].zip"
-        
-        return StreamingResponse(
-            stream_and_cleanup(),
-            media_type="application/zip",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename_with_quality}"'
-            }
-        )
-        
-    except HTTPException:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        raise
-    except Exception as e:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Download failed: {str(e)}"
-        )
+            _direct_download_tasks.pop(task_id, None)
+    
+    return StreamingResponse(
+        stream_and_cleanup(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
