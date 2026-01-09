@@ -64,7 +64,7 @@ export default function Album() {
         throw new Error('No task ID returned')
       }
       
-      // Poll for status
+      // Poll for status with retry logic
       const statusMessages = {
         'pending': `Starting ${qualityName} download...`,
         'downloading': `Downloading ${qualityName} from Qobuz...`,
@@ -73,20 +73,36 @@ export default function Album() {
       
       let status = 'pending'
       let pollCount = 0
+      let consecutiveErrors = 0
       const maxPolls = 360 // 30 minutes max (5 second intervals)
+      const maxConsecutiveErrors = 5
       
       while (status !== 'ready' && status !== 'failed' && pollCount < maxPolls) {
         await new Promise(resolve => setTimeout(resolve, 5000)) // Poll every 5 seconds
         
-        const statusResponse = await api.get(`/music/direct-download/${taskId}/status`)
-        status = statusResponse.data.status
-        
-        if (statusMessages[status]) {
-          toast.loading(statusMessages[status], { id: 'direct-download' })
-        }
-        
-        if (status === 'failed') {
-          throw new Error(statusResponse.data.error || 'Download failed')
+        try {
+          const statusResponse = await api.get(`/music/direct-download/${taskId}/status`, {
+            timeout: 60000 // 60 second timeout for status checks
+          })
+          status = statusResponse.data.status
+          consecutiveErrors = 0 // Reset on success
+          
+          if (statusMessages[status]) {
+            toast.loading(statusMessages[status], { id: 'direct-download' })
+          }
+          
+          if (status === 'failed') {
+            throw new Error(statusResponse.data.error || 'Download failed')
+          }
+        } catch (pollError) {
+          consecutiveErrors++
+          console.warn(`Status poll failed (attempt ${consecutiveErrors}):`, pollError.message)
+          
+          if (consecutiveErrors >= maxConsecutiveErrors) {
+            throw new Error('Lost connection to download - please try again')
+          }
+          // Continue polling on timeout/network errors
+          toast.loading(`Downloading ${qualityName}... (reconnecting)`, { id: 'direct-download' })
         }
         
         pollCount++
